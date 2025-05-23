@@ -1,0 +1,19 @@
+myapp/
+├── cmd/                # 每個執行檔的進入點 (main.go 放這)
+│   └── myapp/
+│       └── main.go
+├── internal/           # 內部核心邏輯，不能被外部導入
+│   ├── db/             # 與資料庫連線、查詢的邏輯
+│   │   └── postgres.go
+│   ├── handler/        # HTTP handler (每個 API endpoint 的處理邏輯)
+│   │   └── user_handler.go
+│   └── service/        # 商業邏輯 (像是計算、驗證、處理流程)
+│       └── user_service.go
+├── pkg/                # 可被其他專案使用的通用工具 (可選)
+│   └── logger/         # 統一的 log 設定
+├── config/             # 存放設定檔（如 .env 或 YAML）
+│   └── config.yaml
+├── go.mod              # Go module 設定
+├── go.sum              # 依賴的檢查碼
+└── README.md           # 專案說明
+
