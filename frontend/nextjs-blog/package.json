@@ -2,15 +2,23 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "PORT=4000 next dev",
     "start": "next start"
   },
   "dependencies": {
+    "classnames": "^2.5.1",
+    "gray-matter": "^4.0.3",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "sass": "^1.89.0",
+    "tailwindcss": "^4.1.7"
   }
 }
