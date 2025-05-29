@@ -1,0 +1,12 @@
+database:
+  username: "admin"
+  password: "andy12345"
+  host: "mydatabase2.cn00ugsy224g.us-east-1.rds.amazonaws.com:3306"
+  name: "mydatabase"
+
+dynamodb:
+  region: us-east-1
+  endpoint: https://dynamodb.us-east-1.amazonaws.com
+  access_key: ASIAW3MEBI4MQNZY6IDE
+  secret_key: FeO3D4OadlpTfTdYEpcfWlNGVwA+XwPxxZEjfaue
+  session_token: IQoJb3JpZ2luX2VjELr//////////wEaCXVzLXdlc3QtMiJIMEYCIQDZu5P8rd39gHW0JN6drxXkUpsQ9HPC3jP3TLXmao5pegIhAPJk1iheMHZfcVzs0XjuPr6I1oN+PNc3Y/mixcE4SjROKqwCCIP//////////wEQABoMNDcxMTEyNjk3NjI1IgyZ2d6oZpMDST1wZwQqgAKyrlXsunGZoLAN9cIwx7TRU/EIxPRqyKKgayVNuR1cl8aQ8CpDP1O1xQFMkAnDYiU9gvQuNTghXljM6oiDbj16p8R5BRPm6geEY4zhFxKrIfbqrFPbmy0DmpKi6kMTleBmrL6xUNroxlmZ/ZkIIIYqbYTRQOjc2rwpTxhlI61V3mrU3vMmUoSkpCKD29Ln+3bu8FfIx+7/+qXJbJFRIEGYYucAIkICAy8KcIN1O7kuzn/I5GuIdWrsKT23xeCC0/e/2Bt9BrkBX6pCdhMs5Tuk4CAKNYOwsur+4IqsikiCe9XRc57C1z9bgk7fI9d7j4NjaDGSU45J1+waviW0nt3dMO/53sEGOpwBPaWc8QZDQkkO/hgLc4MxQ3V2z+r66puKb0lfTfygFvQDThZypCABJyA0BCsTixV+0BRs9LRPYv/MbKf0WM45sJisBHy7fniDAlbh2HJ58EnB2tqpAeD5xkhPHBij87JutQC5DtSK05dHpdNdu2Q40ANqfBhGlDfZxph8Dt2UtC2cqbHswPP9wQcrc1zx6WIW0H3VzUr6RMEpGv39

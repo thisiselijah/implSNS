@@ -1,14 +1,16 @@
 package main
 
 import (
-    "log"
-    "backend/internal/config"
-    "backend/internal/db"
-    "backend/internal/handler"
-    "github.com/gin-gonic/gin"
+	"backend/internal/config"
+	// "fmt"
+	"backend/internal/db"
+	"backend/internal/handler"
+	"log"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
+    // fmt.Println("Hello, World!")
     cfg, err := config.LoadConfig("config/config.yaml")
     if err != nil {
         log.Fatalf("Fail to load confugurations.: %v", err)
@@ -24,9 +26,24 @@ func main() {
         log.Fatalf("Fail to connect databse %v", err)
     }
 
-    r := gin.Default()
+    awsdynamoDB, err := db.InitDynamoDB(
+        cfg.DynamoDB.Region,
+        cfg.DynamoDB.Endpoint,
+        cfg.DynamoDB.AccessKey,
+        cfg.DynamoDB.SecretKey,
+        cfg.DynamoDB.SessionToken,
+    )
 
+    if err != nil {
+        log.Fatalf("Fail to connect DynamoDB: %v", err)
+    }
+
+    r := gin.Default()
+    // MySQL 的路由
     r.GET("/tables", handler.GetTables(mysqlDB))
+    
+    // DynamoDB 的路由
+    r.GET("/dynamodb/tables", handler.GetDynamoDBTables(awsdynamoDB))
 
     r.Run(":8080")
 }
