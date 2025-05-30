@@ -19,6 +19,7 @@ export function getSortedPostsData() {
 
     // 使用 gray-matter 解析 metadata 區塊
     const matterResult = matter(fileContents);
+    // console.log(matterResult.data);
 
     // 將資料與 id 結合
     return {

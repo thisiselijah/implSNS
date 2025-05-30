@@ -1,3 +1,5 @@
 .DS_Store
 ./frontend/nextjs-blog/node_modules/*
 ./frontend/nextjs-blog/.next/*
+./frontend/frontend/node_modules/*
+./frontend/frontend/.next/*
