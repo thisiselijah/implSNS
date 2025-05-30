@@ -3,9 +3,9 @@ import Head from "next/head";
 
 // import styles from "./layout.module.css"; 
 
-export default function Layout({ children, pageTitle = "Social Media Project" }) { 
+export default function Layout({ children, pageTitle}) { 
     return (
-        <div className="flex flex-col min-h-screen bg-gray-100"> {/* 1. 設定為 flex 容器，垂直排列，最小高度為螢幕高度，加上一個淺灰色背景 */}
+        <div className="flex flex-col min-h-screen bg-[#F2F2F2]"> {/* 1. 設定為 flex 容器，垂直排列，最小高度為螢幕高度，加上一個淺灰色背景 */}
             <Head>
                 <link rel="icon" href="/favicon.ico" />
                 <meta name="description" content="Social media project for cloud computing course" />
@@ -29,6 +29,7 @@ export default function Layout({ children, pageTitle = "Social Media Project" })
             {/* 5. 為 footer 加上樣式，並確保文字居中 */}
             <footer className="p-4 text-center mt-auto ">
                 <p className="text-sm">&copy; 2025 Copywrite Social Media Project. All rights reserved.</p>
+                
             </footer>
         </div>
     );
