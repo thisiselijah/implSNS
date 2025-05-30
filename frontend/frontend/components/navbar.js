@@ -1,8 +1,8 @@
 import { useState } from "react"; // 1. 引入 useState
 import Auth from "./auth"; // 假設 Auth.js 在同一目錄
-import Avatar from "./avatar";
+import Link from "next/link";
 
-export default function Navbar() {
+export function IndexNavbar() {
   // 2. 新增 state 來控制 Auth 組件的顯示狀態
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
@@ -18,10 +18,9 @@ export default function Navbar() {
 
   return (
     <>
-      {" "}
       {/* 使用 Fragment 或 <> </> 來包裹多個頂層元素 */}
-      <nav className="bg-gray-800 p-3">
-        <div className="container mx-auto flex justify-between items-center">
+      <nav className="bg-black p-3">
+        <div className="object-contain flex justify-between items-center">
           <a href="/" className="text-white text-lg font-bold">
             Social Media Project
           </a>
@@ -30,7 +29,7 @@ export default function Navbar() {
           <div>
             {/* 5. 修改 onClick 事件處理，調用 handleOpenAuthModal */}
             <button
-              className="text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+              className="text-black font-bold bg-[#F2F2F2] hover:bg-[F2F2F2] px-4 py-2 rounded"
               onClick={handleOpenAuthModal} // 注意：這裡傳遞的是函數引用，不是函數調用
             >
               Log in
@@ -40,7 +39,7 @@ export default function Navbar() {
       </nav>
       {/* 6. 條件渲染 Auth 組件作為模態框 */}
       {isAuthModalOpen && (
-        <div className="fixed inset-0 bg-black opacity-85 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
           {/* fixed inset-0: 固定定位，填滿整個視窗
             bg-black bg-opacity-75: 半透明黑色背景遮罩
             flex items-center justify-center: 使用 flex 將內容垂直和水平居中
@@ -53,5 +52,23 @@ export default function Navbar() {
         </div>
       )}
     </>
+  );
+}
+
+export function PostsNavbar() {
+  return (
+    <div className="object-contain p-4">
+      <p className="text-xl font-semibold">My App Header</p>
+    </div>
+  );
+}
+
+export function ConstructingNavbar() {
+  return (
+    <div className="bg-black object-contain p-3 py-4.5">
+      <Link href="/" className="text-[18px] text-white hover:underline font-bold">
+        Social Media Project
+      </Link>
+    </div>
   );
 }
