@@ -7,7 +7,7 @@ import (
 )
 
 func InitMySQL(user, password, host, dbname string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", user, password, host, dbname)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=True", user, password, host, dbname)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
