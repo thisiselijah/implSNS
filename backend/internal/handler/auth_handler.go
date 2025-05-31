@@ -29,7 +29,7 @@ type RegisterPayload struct {
 // LoginPayload 定義了登入請求預期的 JSON 結構
 type LoginPayload struct {
 	Email    string `json:"email" binding:"required,email"` //
-	Password string `json:"password"binding:"required"`    //
+	Password string `json:"password" binding:"required"`    //
 }
 
 // Login 處理登入邏輯，接收 JSON 格式的使用者憑證
