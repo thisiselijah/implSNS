@@ -12,6 +12,15 @@ type Config struct {
         Host     string `yaml:"host"`
         Name     string `yaml:"name"`
     } `yaml:"database"`
+    
+    DynamoDB struct {
+        Region string `yaml:"region"`
+        Endpoint string `yaml:"endpoint"`
+        AccessKey string `yaml:"access_key"`
+        SecretKey string `yaml:"secret_key"`
+        SessionToken string `yaml:"session_token"`
+    } `yaml:"dynamodb"`
+    
 }
 
 // LoadConfig 讀取 config.yaml 並回傳 Config 結構
