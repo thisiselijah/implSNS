@@ -9,4 +9,4 @@
 
 ### 系統架構
 ---
-<img align=center src=./assets/image.png>
+<img align=center src=./assets/architecture.png>
