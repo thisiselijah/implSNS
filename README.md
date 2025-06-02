@@ -5,7 +5,7 @@
 
 - **後端：** Go
 
-- **資料庫：**AWS RDS, AWS DynamoDB 
+- **資料庫：** AWS RDS, AWS DynamoDB 
 
 ### 系統架構
 ---
