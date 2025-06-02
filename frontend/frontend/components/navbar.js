@@ -1,6 +1,8 @@
 import { useState } from "react"; // 1. 引入 useState
 import Auth from "./auth"; // 假設 Auth.js 在同一目錄
 import Link from "next/link";
+import { useRouter } from "next/router";
+import { useAuth } from '@/contexts/AuthContext';
 
 export function IndexNavbar() {
   // 2. 新增 state 來控制 Auth 組件的顯示狀態
@@ -15,6 +17,14 @@ export function IndexNavbar() {
   const handleCloseAuthModal = () => {
     setIsAuthModalOpen(false);
   };
+  const router = useRouter(); // 取得 Next.js 的路由器
+  const authContext = useAuth(); // 使用 useAuth 來獲取認證狀態
+
+  const handleLoginSuccess = (token) => {
+    // 這裡可以處理登入成功後的邏輯，例如儲存 token 或更新狀態
+    authContext.login(token); // 使用 AuthContext 的 login 方法來儲存 token
+    router.push("/posts/post"); // 登入成功後重定向到特定頁面
+  }
 
   return (
     <>
@@ -46,9 +56,8 @@ export function IndexNavbar() {
             z-50: 確保模態框在其他內容之上
             p-4: 為手機等小螢幕設備在邊緣留出一些空間
           */}
-          <Auth onClose={handleCloseAuthModal} />{" "}
-          {/* 將關閉函數傳遞給 Auth 組件 */}
-          {/* 假設 Avatar 組件用於顯示用戶頭像 */}
+          <Auth onClose={handleCloseAuthModal} onLoginSuccess={handleLoginSuccess} />
+          
         </div>
       )}
     </>
