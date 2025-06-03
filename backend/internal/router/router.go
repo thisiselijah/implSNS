@@ -58,16 +58,15 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 		authRoutes.POST("/logout", authHandler.Logout)     //
 	}
 
-	// 其他 MySQL 相關的路由
-	otherMySQLRoutes := apiV1.Group("/mysql") //
+	testRoutes := apiV1.Group("/test") //
 	{
-		otherMySQLRoutes.GET("/tables", handler.GetTables(mysqlDB)) //
+		testRoutes.GET("/tables", handler.GetTables(mysqlDB))
+		testRoutes.GET("/tables", handler.GetDynamoDBTables(dynamoDBClient)) //
 	}
-
-	// DynamoDB 相關的路由
-	otherDynamoDBRoutes := apiV1.Group("/dynamodb") //
+	
+	postRoutes := apiV1.Group("/posts") //
 	{
-		otherDynamoDBRoutes.GET("/tables", handler.GetDynamoDBTables(dynamoDBClient)) //
+		postRoutes
 	}
 
 	return r
