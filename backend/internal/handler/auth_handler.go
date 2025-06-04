@@ -1,115 +1,137 @@
 package handler
 
 import (
-	"net/http" // 引入 net/http 以便使用 http 狀態碼常數
-	"strings"  // 用於處理字串，例如提取 Bearer token
+	"fmt" // 用於格式化 user ID 為字串
+	"net/http"
+	"strings"
+	// "time" // 如果需要在這裡直接計算 Expires，但我們用 MaxAge
 
-	"backend/internal/models"  // 引入 Service 層期望的 DTO
-	"backend/internal/service" // 引入 AuthService 介面或實例
+	"backend/internal/models"
+	"backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-// AuthHandler 結構體持有 AuthService 的依賴
+// AuthHandler 結構體持有 AuthService 的依賴以及 JWT 過期時間（分鐘）
 type AuthHandler struct {
-	authService service.AuthService // 注意：這裡最好是 service.AuthService 介面
+	authService           service.AuthService
+	jwtTokenExpiryMinutes int // 新增此欄位
 }
 
-// NewAuthHandler 是 AuthHandler 的建構子
-func NewAuthHandler(authService service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+// NewAuthHandler 是 AuthHandler 的建構子，增加 jwtTokenExpiryMinutes 參數
+func NewAuthHandler(authService service.AuthService, jwtTokenExpiryMinutes int) *AuthHandler {
+	return &AuthHandler{
+		authService:           authService,
+		jwtTokenExpiryMinutes: jwtTokenExpiryMinutes, // 儲存 JWT 過期分鐘數
+	}
 }
 
 // RegisterPayload 定義了註冊請求預期的 JSON 結構
 type RegisterPayload struct {
-	Username string `json:"username" binding:"required"`      //
-	Email    string `json:"email" binding:"required,email"` //
-	Password string `json:"password" binding:"required,min=8"`  //
+	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 // LoginPayload 定義了登入請求預期的 JSON 結構
 type LoginPayload struct {
-	Email    string `json:"email" binding:"required,email"` //
-	Password string `json:"password" binding:"required"`    //
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 // Login 處理登入邏輯，接收 JSON 格式的使用者憑證
-func (h *AuthHandler) Login(c *gin.Context) { // 改為 AuthHandler 的方法
-	var payload LoginPayload //
+func (h *AuthHandler) Login(c *gin.Context) {
+	var payload LoginPayload
 
-	if err := c.ShouldBindJSON(&payload); err != nil { //
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()}) //
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	// 將 handler 的 LoginPayload 轉換為 service 層的 models.UserForLogin
 	loginData := models.UserForLogin{
 		Email:    payload.Email,
 		Password: payload.Password,
 	}
 
-	// 呼叫 AuthService 的 Login 方法
-	loginResponse, err := h.authService.Login(loginData)
+	loginResponse, err := h.authService.Login(loginData) //
 	if err != nil {
-		// 根據 service 返回的錯誤類型決定 HTTP 狀態碼
-		// 例如，"invalid email or password" 通常是 401 Unauthorized
 		if err.Error() == "invalid email or password" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		} else {
-			// 其他內部錯誤
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Login failed: " + err.Error()})
 		}
 		return
 	}
 
+	// --- 設定 HTTP-only cookie ---
+	cookieName := "user_id"                                    // 您可以自訂 cookie 名稱
+	cookieValue := fmt.Sprintf("%d", loginResponse.UserID)     // Cookie 的值是 UserID
+	maxAgeSeconds := h.jwtTokenExpiryMinutes * 60              // Cookie 過期時間（秒），與 JWT 同步
+
+	// 決定 Secure 屬性：
+	// 在生產環境 (Release Mode) 且使用 HTTPS 時應為 true。
+	// 為簡化本地 HTTP 開發，這裡先設為 false。
+	// isReleaseMode := gin.Mode() == gin.ReleaseMode
+	secureCookie := false
+	// if isReleaseMode { // 如果在生產環境並且你確定是 HTTPS
+	// 	secureCookie = true
+	// }
+
+	// 設定 Cookie
+	// 使用 http.Cookie 結構體可以更完整地設定 SameSite 等屬性
+	cookie := &http.Cookie{
+		Name:     cookieName,
+		Value:    cookieValue,
+		MaxAge:   maxAgeSeconds,
+		Path:     "/",    // Cookie 在整個網站根路徑下有效
+		Domain:   "",     // Domain 留空，瀏覽器會使用當前請求的主機。
+		Secure:   secureCookie, // 若為 true，則只在 HTTPS 下傳輸
+		HttpOnly: true,         // 核心！設置為 HTTP-only，前端 JS 無法讀取
+		SameSite: http.SameSiteLaxMode, // 建議的 SameSite 策略，有助於防止 CSRF
+	}
+	http.SetCookie(c.Writer, cookie)
+	// --- Cookie 設定完畢 ---
+
 	// 登入成功，返回 service 提供的 LoginResponse (包含 token 等)
 	c.JSON(http.StatusOK, loginResponse)
 }
 
-// Register 處理註冊邏輯，接收 JSON 格式的使用者註冊資訊
-func (h *AuthHandler) Register(c *gin.Context) { // 改為 AuthHandler 的方法
-	var payload RegisterPayload //
+// Register 處理註冊邏輯 (保持不變)
+func (h *AuthHandler) Register(c *gin.Context) {
+	var payload RegisterPayload
 
-	if err := c.ShouldBindJSON(&payload); err != nil { //
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()}) //
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	// 將 handler 的 RegisterPayload 轉換為 service 層的 models.UserForRegistration
 	registrationData := models.UserForRegistration{
 		Username: payload.Username,
 		Email:    payload.Email,
 		Password: payload.Password,
 	}
 
-	// 呼叫 AuthService 的 Register 方法
-	// AuthService 的 Register 方法返回 (*models.User, error)
-	registeredUser, err := h.authService.Register(registrationData)
+	registeredUser, err := h.authService.Register(registrationData) //
 	if err != nil {
-		// 根據 service 返回的錯誤類型決定 HTTP 狀態碼
-		// 例如 "username already exists" 或 "email already exists" 通常是 409 Conflict
 		if strings.Contains(err.Error(), "already exists") {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		} else if strings.Contains(err.Error(), "password must be at least") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		} else {
-			// 其他內部錯誤
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Registration failed: " + err.Error()})
 		}
 		return
 	}
 
-	// 註冊成功，通常返回 201 Created
-	// 你可以選擇返回部分用戶資訊（不含敏感資訊）
-	c.JSON(http.StatusCreated, gin.H{ //
-		"message":  "Registration successful", //
-		"userID":   registeredUser.ID,
+	c.JSON(http.StatusCreated, gin.H{
+		"message":  "Registration successful",
+		"userID":   registeredUser.ID,       //
 		"username": registeredUser.Username, //
 		"email":    registeredUser.Email,    //
 	})
 }
 
-// Logout 處理登出邏輯
-func (h *AuthHandler) Logout(c *gin.Context) { // 改為 AuthHandler 的方法
+// Logout 處理登出邏輯 (保持不變)
+func (h *AuthHandler) Logout(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
@@ -123,8 +145,7 @@ func (h *AuthHandler) Logout(c *gin.Context) { // 改為 AuthHandler 的方法
 	}
 	tokenString := parts[1]
 
-	// 呼叫 AuthService 的 Logout 方法
-	err := h.authService.Logout(tokenString)
+	err := h.authService.Logout(tokenString) //
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid token") {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -134,5 +155,5 @@ func (h *AuthHandler) Logout(c *gin.Context) { // 改為 AuthHandler 的方法
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"}) //
+	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
 }
