@@ -1,12 +1,14 @@
 // auth.js
+const loginUrl = "http://192.168.2.13:8080/api/v1/auth/login"; 
 export default function Auth({ onClose, onLoginSuccess }) {
+
 
   const handleFormSubmit = async (event) => {
     event.preventDefault();
 
     console.log("Form submitted in Auth component");
     try {
-      const response = await fetch("http://localhost:8080/api/v1/auth/login", {
+      const response = await fetch(loginUrl, {
         //
         method: "POST", //
         headers: {
@@ -18,45 +20,46 @@ export default function Auth({ onClose, onLoginSuccess }) {
           email: event.target.email.value, //
           password: event.target.password.value, //
         }),
+        credentials: 'include',
       });
 
       if (!response.ok) {
-        //
-        // 如果 HTTP 狀態碼不是 2xx，則認為是錯誤
+
         try {
           const errData = await response.json();
-          // 嘗試解析錯誤回應的 JSON 主體
-          throw new Error(errData.message || "Network response was not ok");
+          alert(errData.error || "Login failed. Please check your credentials and try again.");
+
         } catch {
-          // 如果錯誤回應不是 JSON 或解析失敗
           throw new Error(
-            "Network response was not ok and error body is not valid JSON"
+            "Could not parse error response. Please try again later."
           );
         }
-      }
-
-      const data = await response.json(); //
-      console.log("Login successful:", data); //
-
-      const jwtToken = data.token || data.accessToken;
-
-      if (jwtToken) {
-        localStorage.setItem("jwtToken", jwtToken);
-        console.log("Token saved to localStorage:", jwtToken);
-
-        if (onLoginSuccess) {
-          onLoginSuccess(jwtToken); // 傳遞 token 給父組件
-        }
-        if (onClose) {
-          // 關閉 Modal 的邏輯可以保留或也由父組件處理
-          onClose();
-        }
       } else {
-        console.warn("JWT Token not found in the login response data.");
-        // 可以在這裡處理 Token 未返回的情況，例如顯示一個通用錯誤訊息
-        alert(
-          "Login successful, but no token was received. Please contact support."
-        );
+        const data = await response.json(); //
+        console.log("Login successful:", data); //
+
+        const jwtToken = data.token || data.accessToken;
+
+        if (jwtToken) {
+          localStorage.setItem("jwtToken", jwtToken);
+          console.log("Token saved to localStorage:", jwtToken);
+
+          if (onLoginSuccess) {
+            onLoginSuccess(jwtToken); // 傳遞 token 給父組件
+          }
+          if (onClose) {
+            // 關閉 Modal 的邏輯可以保留或也由父組件處理
+            onClose();
+          }
+        } else {
+          console.warn("JWT Token not found in the login response data.");
+          // 可以在這裡處理 Token 未返回的情況，例如顯示一個通用錯誤訊息
+          alert(
+            "Login successful, but no token was received. Please contact support."
+          );
+        }
+        const user_id = data.user_id;
+        localStorage.setItem("user_id", user_id);
       }
     } catch (error) {
       //
