@@ -23,7 +23,7 @@ export function IndexNavbar() {
   const handleLoginSuccess = (token) => {
     // 這裡可以處理登入成功後的邏輯，例如儲存 token 或更新狀態
     authContext.login(token); // 使用 AuthContext 的 login 方法來儲存 token
-    router.push("/posts/post"); // 登入成功後重定向到特定頁面
+    router.push("/posts"); // 登入成功後重定向到特定頁面
   }
 
   return (
@@ -66,8 +66,11 @@ export function IndexNavbar() {
 
 export function PostsNavbar() {
   return (
-    <div className="object-contain p-4">
-      <p className="text-xl font-semibold">My App Header</p>
+    <div className="p-4 px-8">
+      <Link href="/" className="text-[24px] text-black font-bold">
+        Home
+      </Link>
+
     </div>
   );
 }
