@@ -12,7 +12,7 @@ export default function Constructing() {
         const timer = setInterval(() => {
             setCountdown((prev) => {
                 if (prev <= 1) {
-                    router.push('/');
+                    router.push('/posts');
                     return 0;
                 }
                 return prev - 1;

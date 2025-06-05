@@ -57,18 +57,29 @@ export function IndexNavbar() {
             p-4: 為手機等小螢幕設備在邊緣留出一些空間
           */}
           <Auth onClose={handleCloseAuthModal} onLoginSuccess={handleLoginSuccess} />
-          
+
         </div>
       )}
     </>
   );
 }
 
-export function PostsNavbar() {
+export function PostsNavbar( {userId} ) {
   return (
-    <div className="p-4 px-8">
-      <Link href="/" className="text-[24px] text-black font-bold">
-        Home
+    <div className="flex flex-row gap-4 text-center items-center justify-center p-3 py-4.5">
+      <Link href={"/posts"}>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 9-3 3m0 0 3 3m-3-3h7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+      </Link>
+      <p>
+        <span className="text-[24px] text-black italic font-bold">Posts</span>
+      </p>
+
+      <Link href={"/profile/"+userId}>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
       </Link>
 
     </div>
@@ -81,6 +92,25 @@ export function ConstructingNavbar() {
       <Link href="/" className="text-[18px] text-white hover:underline font-bold">
         Social Media Project
       </Link>
+    </div>
+  );
+}
+
+export function ProfileNavbar() {
+  return (
+    <div className="flex flex-row gap-4 text-center items-center justify-center p-3 py-4.5">
+      <Link href={"/posts"}>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 9-3 3m0 0 3 3m-3-3h7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+      </Link>
+      <p>
+        <span className="text-[24px] text-black italic font-bold">Profile</span>
+      </p>
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+      </svg>
+
     </div>
   );
 }
