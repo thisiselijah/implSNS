@@ -4,7 +4,7 @@ import styles from "./layout.module.css"; // 確保這個路徑正確，指向�
 
 // import styles from "./layout.module.css"; 
 
-export default function Layout({ children, pageTitle}) { 
+export default function Layout({ children, pageTitle }) {
     return (
         <div className={styles.layout}> {/* 1. 設定為 flex 容器，垂直排列，最小高度為螢幕高度，加上一個淺灰色背景 */}
             <Head>
@@ -22,15 +22,14 @@ export default function Layout({ children, pageTitle}) {
             </header> */}
 
             {/* 4. 設定 main 區域可以成長以填滿剩餘空間，並加上一些基本內邊距和容器設定 */}
-            <main className="flex-grow">
-                {/*  container mx-auto p-4 md:p-6 lg:p-8 */}
+            <main className={styles.main}>
                 {children}
             </main>
 
             {/* 5. 為 footer 加上樣式，並確保文字居中 */}
-            <footer className="p-4 text-center mt-auto ">
+            <footer className="p-4 text-center">
                 <p className="text-sm">&copy; 2025 Copywrite Social Media Project. All rights reserved.</p>
-                
+
             </footer>
         </div>
     );

@@ -1,5 +1,5 @@
 // auth.js
-const loginUrl = "http://192.168.2.13:8080/api/v1/auth/login"; 
+const loginUrl = "http://localhost:8080/api/v1/auth/login"; 
 export default function Auth({ onClose, onLoginSuccess }) {
 
 
@@ -58,6 +58,9 @@ export default function Auth({ onClose, onLoginSuccess }) {
             "Login successful, but no token was received. Please contact support."
           );
         }
+        const username = data.username;
+        localStorage.setItem("username", username);
+
         const user_id = data.user_id;
         localStorage.setItem("user_id", user_id);
       }

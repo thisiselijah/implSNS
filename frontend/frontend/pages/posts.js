@@ -7,11 +7,11 @@ import CreatePost from "@/components/createpost";
 import { PostsNavbar } from "@/components/navbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import LeftPanel from "@/components/leftpanel";
 
 // 假設這是你後端 API 的基礎 URL
-const API_BASE_URL = "http://192.168.2.13:8080/api/v1";
+const API_BASE_URL = "http://localhost:8080/api/v1";
 
 export async function getServerSideProps(context) {
   const { req, res } = context;
@@ -105,6 +105,14 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
     }
   }, [isAuthenticated, authIsLoading, router, error]);
 
+  const [userId, setUserId] = useState(null);
+
+  useEffect(() => {
+    setUserId(localStorage.getItem("user_id"));
+  }, []);
+  
+
+
 
   // 處理 SSR 期間發生的錯誤
   if (error) {
@@ -137,34 +145,34 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
   }
 
   const feedData = (initialFeedData) => {
-      if (!initialFeedData || !Array.isArray(initialFeedData)) {
-        console.warn("SSR: Initial feed data is not an array or is null.");
-        return [];
-      }
-      return initialFeedData.map(item => ({
-        post_id: item.post_id,
-        author_name: item.author_name,
-        content: item.content,
-        media: Array.isArray(item.media) ? item.media : [],
-        tags: Array.isArray(item.tags) ? item.tags : [],
-        location: item.location || null,
-        like_count: typeof item.like_count === 'number' ? item.like_count : 0,
-        comment_count: typeof item.comment_count === 'number' ? item.comment_count : 0,
-        created_at: item.created_at ? new Date(item.created_at) : null,
-        updated_at: item.updated_at ? new Date(item.updated_at) : null,
-      }));
-
+    if (!initialFeedData || !Array.isArray(initialFeedData)) {
+      console.warn("SSR: Initial feed data is not an array or is null.");
+      return [];
     }
+    return initialFeedData.map(item => ({
+      post_id: item.post_id,
+      author_name: item.author_name,
+      content: item.content,
+      media: Array.isArray(item.media) ? item.media : [],
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      location: item.location || null,
+      like_count: typeof item.like_count === 'number' ? item.like_count : 0,
+      comment_count: typeof item.comment_count === 'number' ? item.comment_count : 0,
+      created_at: item.created_at ? new Date(item.created_at) : null,
+      updated_at: item.updated_at ? new Date(item.updated_at) : null,
+    }));
 
-  
+  }
 
-  
+
+
+
 
   // 主要內容渲染
   return (
     <Layout pageTitle="View Post">
-      <PostsNavbar />
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-4 h-screen">
+      <PostsNavbar userId={userId}/>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-4 min-h-screen">
         <LeftPanel /> {/* LeftPanel 可能也需要 SSR 資料，如果其內容是使用者特定的 */}
 
         <main className="flex flex-col lg:col-span-6 md:col-span-8 col-span-12">
@@ -189,11 +197,18 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
         <aside className="hidden md:block md:col-span-4 lg:col-span-3">
           <div className="flex flex-col gap-2 sticky top-30">
             {/* Avatar 可能需要從 authContext 或 serverRenderedUserId 獲取用戶資訊 */}
-            <Avatar router={router} authContext={authContext}/>
-            
-            <div className="bg-white p-5 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-3">搜尋</h3>
-              <div className="flex flex-row items-center gap-2">
+            <Avatar router={router} authContext={authContext} />
+
+            <div className="flex flex-col gap-2 bg-white rounded-lg shadow">
+              <div className="flex flex-row items-center gap-2 p-4 border-b border-gray-200">
+                
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                </svg>
+                <h3 className="text-lg font-semibold text-gray-700">搜尋</h3>
+              </div>
+
+              <div className="flex flex-row items-center p-4 gap-2">
                 <input
                   type="text"
                   placeholder="搜尋貼文、用戶..."
@@ -214,7 +229,7 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
       {isCreatePostOpen && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
           <div className="bg-transparent rounded-lg relative w-full max-w-xl">
-            <CreatePost onClose={handleCloseCreatePost}/>
+            <CreatePost onClose={handleCloseCreatePost} />
           </div>
         </div>
       )}
