@@ -4,8 +4,6 @@ import (
 	"fmt" // 用於格式化 user ID 為字串
 	"net/http"
 	"strings"
-	// "time" // 如果需要在這裡直接計算 Expires，但我們用 MaxAge
-
 	"backend/internal/models"
 	"backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -63,39 +61,44 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// --- 設定 HTTP-only cookie ---
-	cookieName := "user_id"                                    // 您可以自訂 cookie 名稱
-	cookieValue := fmt.Sprintf("%d", loginResponse.UserID)     // Cookie 的值是 UserID
-	maxAgeSeconds := h.jwtTokenExpiryMinutes * 60              // Cookie 過期時間（秒），與 JWT 同步
+	cookieValue := fmt.Sprintf("%d", loginResponse.UserID)
+	maxAgeSeconds := h.jwtTokenExpiryMinutes * 60
 
-	// 決定 Secure 屬性：
-	// 在生產環境 (Release Mode) 且使用 HTTPS 時應為 true。
-	// 為簡化本地 HTTP 開發，這裡先設為 false。
-	// isReleaseMode := gin.Mode() == gin.ReleaseMode
 	secureCookie := false
-	// if isReleaseMode { // 如果在生產環境並且你確定是 HTTPS
-	// 	secureCookie = true
-	// }
 
-	// 設定 Cookie
-	// 使用 http.Cookie 結構體可以更完整地設定 SameSite 等屬性
 	cookie := &http.Cookie{
-		Name:     cookieName,
+		Name:     "user_id",
 		Value:    cookieValue,
 		MaxAge:   maxAgeSeconds,
-		Path:     "/",    // Cookie 在整個網站根路徑下有效
-		Domain:   "",     // Domain 留空，瀏覽器會使用當前請求的主機。
-		Secure:   secureCookie, // 若為 true，則只在 HTTPS 下傳輸
-		HttpOnly: true,         // 核心！設置為 HTTP-only，前端 JS 無法讀取
-		SameSite: http.SameSiteLaxMode, // 建議的 SameSite 策略，有助於防止 CSRF
+		Path:     "/",
+		Domain:   "",
+		Secure:   secureCookie,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(c.Writer, cookie)
+
+	// 新增 JWT token 的 cookie
+	jwtCookie := &http.Cookie{
+		Name:     "jwt_token",
+		Value:    loginResponse.Token, // 假設 Token 在這裡
+		MaxAge:   maxAgeSeconds,
+		Path:     "/",
+		Domain:   "",
+		Secure:   secureCookie,
+		HttpOnly: true, // 建議設為 true
+		SameSite: http.SameSiteLaxMode,
+	}
+	http.SetCookie(c.Writer, jwtCookie)
 	// --- Cookie 設定完畢 ---
 
-	// 登入成功，返回 service 提供的 LoginResponse (包含 token 等)
-	c.JSON(http.StatusOK, loginResponse)
+	// return JSON 格式的登入回應
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Login successful",
+		"userID":   loginResponse.UserID,       // 使用者 ID
+	})
 }
 
-// Register 處理註冊邏輯 (保持不變)
 func (h *AuthHandler) Register(c *gin.Context) {
 	var payload RegisterPayload
 
@@ -130,30 +133,58 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	})
 }
 
-// Logout 處理登出邏輯 (保持不變)
 func (h *AuthHandler) Logout(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-		return
-	}
+    // 從 cookie 讀取 jwt_token
+    tokenString, err := c.Cookie("jwt_token")
+    if err != nil || tokenString == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "jwt_token cookie is required"})
+        return
+    }
 
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer {token}"})
-		return
-	}
-	tokenString := parts[1]
+    err = h.authService.Logout(tokenString)
+    if err != nil {
+        if strings.Contains(err.Error(), "invalid token") {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Logout failed: " + err.Error()})
+        }
+        return
+    }
 
-	err := h.authService.Logout(tokenString) //
-	if err != nil {
-		if strings.Contains(err.Error(), "invalid token") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Logout failed: " + err.Error()})
-		}
-		return
-	}
+    // 清除 jwt_token 與 user_id cookie
+    clearCookie := func(name string) {
+        http.SetCookie(c.Writer, &http.Cookie{
+            Name:     name,
+            Value:    "",
+            Path:     "/",
+            MaxAge:   -1,
+            HttpOnly: true,
+            SameSite: http.SameSiteLaxMode,
+        })
+    }
+    clearCookie("jwt_token")
+    clearCookie("user_id")
 
-	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
+    c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
+}
+
+func (h *AuthHandler) GetAuthStatus(c *gin.Context) {
+    // 從 cookie 讀取 jwt_token
+    tokenString, err := c.Cookie("jwt_token")
+    if err != nil || tokenString == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "jwt_token cookie is required"})
+        return
+    }
+
+    // 檢查 token 是否有效，並取得 userID
+    userID, err := h.authService.GetUserIDFromToken(tokenString)
+    if err != nil || userID == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{
+        "message": "User is authenticated",
+        "userID":  userID,
+    })
 }

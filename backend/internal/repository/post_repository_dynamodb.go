@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -18,7 +19,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// --- 新增 PostRepository 介面 ---
 type PostRepository interface {
 	GetFeedItemsByUserID(ctx context.Context, userPK string) ([]models.FeedItem, error)
 	GetPostsByIDs(ctx context.Context, postIDs []string) ([]models.Post, error)
@@ -27,8 +27,14 @@ type PostRepository interface {
 	UpdatePost(ctx context.Context, post *models.Post) error
 	DeletePost(ctx context.Context, authorID, postID, createdAt string) error
 	GetPostByID(ctx context.Context, postID string) (*models.Post, error)
-}
 
+	// --- FIX: Signatures changed to accept *models.Post ---
+	AddLike(ctx context.Context, post *models.Post, userID string) error
+	RemoveLike(ctx context.Context, post *models.Post, userID string) error
+	CreateComment(ctx context.Context, post *models.Post, comment *models.Comment) error
+	DeleteComment(ctx context.Context, post *models.Post, commentSK string) error
+	GetCommentBySK(ctx context.Context, postID, commentSK string) (*models.Comment, error)
+}
 
 const FeedTableName = "Posts" // 假設您的表名
 
@@ -38,12 +44,225 @@ type DynamoDBPostRepository struct {
 	tableName string
 }
 
-// NewDynamoDBPostRepository 建構子
 func NewDynamoDBPostRepository(client *dynamodb.Client) PostRepository {
 	return &DynamoDBPostRepository{
 		client:    client,
 		tableName: FeedTableName, // 或者從配置讀取
 	}
+}
+
+func (r *DynamoDBPostRepository) AddLike(ctx context.Context, post *models.Post, userID string) error {
+	like := models.Like{
+		PK:         "POST#" + post.PostID,
+		SK:         "USER#" + userID,
+		EntityType: "LIKED_POST",
+		PostID:     post.PostID,
+		UserID:     userID,
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	likeItem, err := attributevalue.MarshalMap(like)
+	if err != nil {
+		return fmt.Errorf("failed to marshal like item: %w", err)
+	}
+
+	// The post's key is now taken directly from the passed-in object.
+	postKey, err := attributevalue.MarshalMap(map[string]string{"PK": post.PK, "SK": post.SK})
+	if err != nil {
+		return fmt.Errorf("failed to marshal post key for like: %w", err)
+	}
+
+	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{
+				Put: &types.Put{
+					TableName:           aws.String(r.tableName),
+					Item:                likeItem,
+					ConditionExpression: aws.String("attribute_not_exists(PK)"), // Prevents duplicate likes
+				},
+			},
+			{
+				Update: &types.Update{
+					TableName:        aws.String(r.tableName),
+					Key:              postKey,
+					UpdateExpression: aws.String("ADD like_count :inc"),
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":inc": &types.AttributeValueMemberN{Value: "1"},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		if _, ok := err.(*types.TransactionCanceledException); ok {
+			return errors.New("transaction failed, possibly already liked")
+		}
+		log.Printf("Error in AddLike transaction: %v", err)
+		return err
+	}
+	return nil
+}
+
+// --- FIX: RemoveLike now uses the passed-in post's PK and SK ---
+func (r *DynamoDBPostRepository) RemoveLike(ctx context.Context, post *models.Post, userID string) error {
+	likePK := "POST#" + post.PostID
+	likeSK := "USER#" + userID
+
+	postKey, err := attributevalue.MarshalMap(map[string]string{"PK": post.PK, "SK": post.SK})
+	if err != nil {
+		return fmt.Errorf("failed to marshal post key for unlike: %w", err)
+	}
+
+	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{
+				Delete: &types.Delete{
+					TableName: aws.String(r.tableName),
+					Key: map[string]types.AttributeValue{
+						"PK": &types.AttributeValueMemberS{Value: likePK},
+						"SK": &types.AttributeValueMemberS{Value: likeSK},
+					},
+					ConditionExpression: aws.String("attribute_exists(PK)"), // Ensure the like exists
+				},
+			},
+			{
+				Update: &types.Update{
+					TableName:           aws.String(r.tableName),
+					Key:                 postKey,
+					UpdateExpression:    aws.String("ADD like_count :dec"),
+					ConditionExpression: aws.String("like_count > :zero"), // Prevent negative counts
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":dec":  &types.AttributeValueMemberN{Value: "-1"},
+						":zero": &types.AttributeValueMemberN{Value: "0"},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		if _, ok := err.(*types.TransactionCanceledException); ok {
+			return errors.New("transaction failed, possibly not liked yet or count is zero")
+		}
+		log.Printf("Error in RemoveLike transaction: %v", err)
+		return err
+	}
+	return nil
+}
+
+// --- FIX: CreateComment now uses the passed-in post's PK and SK ---
+func (r *DynamoDBPostRepository) CreateComment(ctx context.Context, post *models.Post, comment *models.Comment) error {
+	now := time.Now().UTC()
+	commentID := uuid.New().String()
+	timestamp := now.Format(time.RFC3339Nano)
+
+	comment.PK = "POST#" + post.PostID
+	comment.SK = fmt.Sprintf("COMMENT#%s#%s", timestamp, commentID)
+	comment.CommentID = commentID
+	comment.EntityType = "COMMENT"
+	comment.CreatedAt = timestamp
+
+	commentItem, err := attributevalue.MarshalMap(comment)
+	if err != nil {
+		return err
+	}
+
+	postKey, err := attributevalue.MarshalMap(map[string]string{"PK": post.PK, "SK": post.SK})
+	if err != nil {
+		return fmt.Errorf("failed to marshal post key for comment: %w", err)
+	}
+
+	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{
+				Put: &types.Put{
+					TableName: aws.String(r.tableName),
+					Item:      commentItem,
+				},
+			},
+			{
+				Update: &types.Update{
+					TableName:        aws.String(r.tableName),
+					Key:              postKey,
+					UpdateExpression: aws.String("ADD comment_count :inc"),
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":inc": &types.AttributeValueMemberN{Value: "1"},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		log.Printf("Error in CreateComment transaction: %v", err)
+		return err
+	}
+	return nil
+}
+
+// --- FIX: DeleteComment now uses the passed-in post's PK and SK ---
+func (r *DynamoDBPostRepository) DeleteComment(ctx context.Context, post *models.Post, commentSK string) error {
+	commentPK := "POST#" + post.PostID
+
+	postKey, err := attributevalue.MarshalMap(map[string]string{"PK": post.PK, "SK": post.SK})
+	if err != nil {
+		return fmt.Errorf("failed to marshal post key for delete comment: %w", err)
+	}
+
+	_, err = r.client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{
+				Delete: &types.Delete{
+					TableName: aws.String(r.tableName),
+					Key: map[string]types.AttributeValue{
+						"PK": &types.AttributeValueMemberS{Value: commentPK},
+						"SK": &types.AttributeValueMemberS{Value: commentSK},
+					},
+				},
+			},
+			{
+				Update: &types.Update{
+					TableName:           aws.String(r.tableName),
+					Key:                 postKey,
+					UpdateExpression:    aws.String("ADD comment_count :dec"),
+					ConditionExpression: aws.String("comment_count > :zero"),
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":dec":  &types.AttributeValueMemberN{Value: "-1"},
+						":zero": &types.AttributeValueMemberN{Value: "0"},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		log.Printf("Error in DeleteComment transaction: %v", err)
+		return err
+	}
+	return nil
+}
+
+// GetCommentBySK gets a comment by its full primary key (PK and SK)
+func (r *DynamoDBPostRepository) GetCommentBySK(ctx context.Context, postID, commentSK string) (*models.Comment, error) {
+	pk := "POST#" + postID
+	result, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+			"SK": &types.AttributeValueMemberS{Value: commentSK},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Item == nil {
+		return nil, errors.New("comment not found")
+	}
+	var comment models.Comment
+	if err := attributevalue.UnmarshalMap(result.Item, &comment); err != nil {
+		return nil, err
+	}
+	return &comment, nil
 }
 
 // CreatePost 將新貼文儲存到 DynamoDB
@@ -60,7 +279,7 @@ func (r *DynamoDBPostRepository) CreatePost(ctx context.Context, post *models.Po
 	post.SK = "POST#" + timestamp + "#" + postID
 	post.GSI1PK = "POST#" + postID
 	post.GSI1SK = "METADATA"
-	post.EntityType = "Post"
+	post.EntityType = "POST"
 
 	item, err := attributevalue.MarshalMap(post)
 	if err != nil {
@@ -106,7 +325,6 @@ func (r *DynamoDBPostRepository) GetPostsByUserID(ctx context.Context, userID st
 	return posts, nil
 }
 
-
 // UpdatePost 更新貼文內容
 func (r *DynamoDBPostRepository) UpdatePost(ctx context.Context, post *models.Post) error {
 	// 為了更新，我們需要知道完整的 Key (PK, SK)
@@ -118,7 +336,7 @@ func (r *DynamoDBPostRepository) UpdatePost(ctx context.Context, post *models.Po
 	if err != nil {
 		return err
 	}
-	
+
 	updateExpression := "SET content = :c, updatedAt = :u"
 	expressionAttributeValues, err := attributevalue.MarshalMap(map[string]interface{}{
 		":c": post.Content,
@@ -127,7 +345,7 @@ func (r *DynamoDBPostRepository) UpdatePost(ctx context.Context, post *models.Po
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(r.tableName),
 		Key:                       key,
@@ -135,24 +353,23 @@ func (r *DynamoDBPostRepository) UpdatePost(ctx context.Context, post *models.Po
 		ExpressionAttributeValues: expressionAttributeValues,
 		ReturnValues:              types.ReturnValueUpdatedNew,
 	})
-	
+
 	if err != nil {
 		log.Printf("Error updating post in DynamoDB: %v", err)
 		return err
 	}
-	
+
 	return nil
 }
 
 // DeletePost 刪除貼文
 func (r *DynamoDBPostRepository) DeletePost(ctx context.Context, authorID, postID, createdAt string) error {
 	// 為了刪除，我們需要重建 SK
-    // 注意：這種方法要求 createdAt 的格式必須與儲存時完全一致
+	// 注意：這種方法要求 createdAt 的格式必須與儲存時完全一致
 	pk := "USER#" + authorID
 	// SK 的重建依賴於 CreatedAt 和 PostID
 	// 這是一個潛在的脆弱點，如果 SK 的生成邏輯改變，這裡也要改
 	sk := fmt.Sprintf("POST#%s#%s", createdAt, postID)
-
 
 	key, err := attributevalue.MarshalMap(map[string]string{
 		"PK": pk,
@@ -174,7 +391,6 @@ func (r *DynamoDBPostRepository) DeletePost(ctx context.Context, authorID, postI
 	}
 	return nil
 }
-
 
 // GetPostByID 透過 GSI 查詢單一貼文
 func (r *DynamoDBPostRepository) GetPostByID(ctx context.Context, postID string) (*models.Post, error) {
@@ -203,7 +419,6 @@ func (r *DynamoDBPostRepository) GetPostByID(ctx context.Context, postID string)
 	}
 	return &post, nil
 }
-
 
 // GetFeedItemsByUserID 從 DynamoDB 獲取指定用戶的 Feed Item 列表
 // PK = USER#{userID}, SK starts_with FEEDITEM#
@@ -236,13 +451,11 @@ func (r *DynamoDBPostRepository) GetFeedItemsByUserID(ctx context.Context, userP
 	}
 	log.Printf("Successfully fetched %d feed items for PK: %s", len(feedItems), userPK)
 
-
 	// 由於 DynamoDB 的 begins_with 和 ScanIndexForward 已經排序，這裡通常不需要額外排序
 	// 如果需要基於 FeedItem 結構中的特定時間戳欄位（例如 OriginalPostCreatedAt）再次確認排序，可以在這裡做
 	// sort.SliceStable(feedItems, func(i, j int) bool {
 	// 	return feedItems[i].OriginalPostCreatedAt > feedItems[j].OriginalPostCreatedAt // 假設是字串且可比較，或轉換為 time.Time
 	// })
-
 
 	return feedItems, nil
 }
@@ -295,12 +508,11 @@ func (r *DynamoDBPostRepository) GetPostsByIDs(ctx context.Context, postIDs []st
 		}
 	}
 
-
 	// 策略 2 的實際執行：多次並行 Query GSI1
 	// 由於 BatchGetItem 直接用於 GSI 是不支援的，我們需要多次 Query GSI 或 GetItem GSI
 	var posts []models.Post
 	var mu sync.Mutex // Mutex to protect posts slice
-    var wg sync.WaitGroup
+	var wg sync.WaitGroup
 
 	for _, id := range postIDs {
 		wg.Add(1)
@@ -315,11 +527,10 @@ func (r *DynamoDBPostRepository) GetPostsByIDs(ctx context.Context, postIDs []st
 			mu.Lock()
 			posts = append(posts, *post)
 			mu.Unlock()
-			
+
 		}(id)
 	}
-    wg.Wait()
-
+	wg.Wait()
 
 	log.Printf("Successfully fetched %d posts by IDs", len(posts))
 	return posts, nil

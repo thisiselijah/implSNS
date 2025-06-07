@@ -1,4 +1,3 @@
-
 package models
 
 type Post struct {
@@ -52,4 +51,37 @@ type DeletePostPayload struct {
 	// 為了刪除 DynamoDB 項目，我們需要完整的 Primary Key (PK, SK)。
 	// SK 包含時間戳，前端可能沒有。
 	// 這裡的設計是讓 Service 層根據 PostID 找到 Post，再刪除。
+}
+
+
+// --- 新增 Like 和 Comment 相關的模型 ---
+
+// Like 記錄了誰對哪篇貼文按讚
+type Like struct {
+	PK         string `dynamodbav:"PK"`      // POST#{post_id}
+	SK         string `dynamodbav:"SK"`      // USER#{user_id}
+	EntityType string `dynamodbav:"entity_type"`
+	PostID     string `dynamodbav:"post_id"`
+	UserID     string `dynamodbav:"user_id"`
+	CreatedAt  string `dynamodbav:"created_at"`
+}
+
+// Comment 包含了評論的詳細資訊
+type Comment struct {
+	PK           string `dynamodbav:"PK"`         // POST#{post_id}
+	SK           string `dynamodbav:"SK"`         // COMMENT#{timestamp}#{comment_id}
+	EntityType   string `dynamodbav:"entity_type"`
+	CommentID    string `dynamodbav:"comment_id"`
+	PostID       string `dynamodbav:"post_id"`
+	AuthorID     string `dynamodbav:"author_id"`
+	AuthorName   string `dynamodbav:"author_name"` // 冗餘儲存，方便查詢
+	Content      string `dynamodbav:"content"`
+	CreatedAt    string `dynamodbav:"created_at"`
+}
+
+// CreateCommentPayload 定義了新增評論請求的 JSON 結構
+type CreateCommentPayload struct {
+	PostID   string `json:"post_id" binding:"required"`
+	AuthorID string `json:"author_id" binding:"required"`
+	Content  string `json:"content" binding:"required"`
 }

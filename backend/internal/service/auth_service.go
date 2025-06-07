@@ -4,6 +4,7 @@ import (
 	"errors" // 用於建立自訂錯誤
 	"log"    // 簡單日誌記錄
 	"time"   // 用於 JWT 的過期時間
+	"strconv"
 	"backend/internal/models"
 	"backend/internal/repository"
 	"golang.org/x/crypto/bcrypt"
@@ -103,9 +104,10 @@ func (s *AuthService) Login(loginData models.UserForLogin) (*models.LoginRespons
 	}
 
 	// 3. 產生 JWT
+
 	expirationTime := time.Now().Add(s.jwtTokenExpiry)
 	claims := &jwt.RegisteredClaims{
-		Subject:   string(rune(user.ID)), // 通常使用 UserID 作為主體
+		Subject:   strconv.FormatUint(uint64(user.ID), 10),
 		ExpiresAt: jwt.NewNumericDate(expirationTime),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		Issuer:    "my-app", // 應用程式名稱
@@ -162,4 +164,29 @@ func (s *AuthService) Logout(tokenString string) error {
 	}
 
 	return errors.New("invalid token provided for logout")
+}
+
+func (s *AuthService) GetUserIDFromToken(tokenString string) (string, error) {
+    // 1. 先檢查黑名單
+    isBlacklisted, err := s.blacklistRepo.IsTokenBlacklisted(tokenString)
+    if err != nil {
+        return "", err
+    }
+    if isBlacklisted {
+        return "", errors.New("token is blacklisted")
+    }
+
+    // 2. 解析 JWT
+    claims := &jwt.RegisteredClaims{}
+    token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, errors.New("unexpected signing method")
+        }
+        return s.jwtSecretKey, nil
+    })
+    if err != nil || !token.Valid {
+        return "", errors.New("invalid or expired token")
+    }
+
+    return claims.Subject, nil // userID 存在於 Subject
 }
