@@ -9,9 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/router";
 import { use, useEffect, useState } from "react";
 import LeftPanel from "@/components/leftpanel";
+import {GetViewableUrl} from "@/lib/getViewableUrl";
 
-// 假設這是你後端 API 的基礎 URL
-const API_BASE_URL = "http://localhost:8080/api/v1";
 
 export async function getServerSideProps(context) {
   const { req, res } = context;
@@ -38,7 +37,7 @@ export async function getServerSideProps(context) {
 
   try {
     // 2. 使用 userID 獲取 Feed 數據
-    const feedApiUrl = `${API_BASE_URL}/pages/posts/feed/${userId}`;
+    const feedApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL+process.env.NEXT_PUBLIC_POSTS_FEED_API+`${userId}`;
     const feedResponse = await fetch(feedApiUrl, {
       // 如果 API 需要特定的 headers (例如內部認證 token)，在這裡添加
       // headers: {
@@ -64,13 +63,33 @@ export async function getServerSideProps(context) {
 
     const initialFeedData = await feedResponse.json();
 
+    // Get user profile
+    const res = await fetch(
+      process.env.NEXT_PUBLIC_API_BASE_URL+process.env.NEXT_PUBLIC_PROFILE_API+`${userId}`, {
+      method: "GET"}
+    );
+
+    if (!res.ok) {
+      console.error(`SSR: Failed to fetch user data for user ${userId}. Status: ${res.status}`);
+    };
+
+    const profileData = await res.json();
+    if (!profileData || !profileData.user_id) {
+        console.error("Profile data is missing userId:", profileData);
+        return {
+            notFound: true,
+        };
+    }
+    let avatar_access_key = profileData.avatar_access_key || null;
+    let username = profileData.username || null;
+    let viewableUrl = await GetViewableUrl(avatar_access_key);
 
     // 3. 將數據作為 props 傳遞給頁面組件
     return {
       props: {
-        initialFeedData, // 將 Feed 數據傳遞給組件
-        // 你也可以選擇將 userID 傳下去，如果客戶端組件後續操作仍需參考
-        // serverRenderedUserId: userId,
+        initialFeedData,
+        viewableUrl,
+        username
       },
     };
   } catch (error) {
@@ -82,7 +101,7 @@ export async function getServerSideProps(context) {
   }
 }
 
-export default function Posts({ initialFeedData, error /*, serverRenderedUserId */ }) {
+export default function Posts({ initialFeedData, viewableUrl, username, error /*, serverRenderedUserId */ }) {
   // 客戶端的 useAuth hook 仍然重要，用於管理 UI 狀態、登出、以及 CSR 下的行為
   const { isAuthenticated, isLoading: authIsLoading, user } = useAuth();
   const router = useRouter();
@@ -151,6 +170,7 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
     }
     return initialFeedData.map(item => ({
       post_id: item.post_id,
+      author_id: item.author_id,
       author_name: item.author_name,
       content: item.content,
       media: Array.isArray(item.media) ? item.media : [],
@@ -197,7 +217,7 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
         <aside className="hidden md:block md:col-span-4 lg:col-span-3">
           <div className="flex flex-col gap-2 sticky top-30">
             {/* Avatar 可能需要從 authContext 或 serverRenderedUserId 獲取用戶資訊 */}
-            <Avatar router={router} authContext={authContext} />
+            <Avatar router={router} authContext={authContext} avatar_url={viewableUrl} username={username} />
 
             <div className="flex flex-col gap-2 bg-white rounded-lg shadow">
               <div className="flex flex-row items-center gap-2 p-4 border-b border-gray-200">
@@ -229,7 +249,7 @@ export default function Posts({ initialFeedData, error /*, serverRenderedUserId 
       {isCreatePostOpen && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
           <div className="bg-transparent rounded-lg relative w-full max-w-xl">
-            <CreatePost onClose={handleCloseCreatePost} />
+            <CreatePost onClose={handleCloseCreatePost} avatar_url={viewableUrl}/>
           </div>
         </div>
       )}

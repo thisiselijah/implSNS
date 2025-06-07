@@ -1,8 +1,8 @@
 import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 
-export default function CreatePost({ onClose, userAvatar }) {
-    const userAvatarSrc = userAvatar || "/user.png"; // Default avatar if none provided
+export default function CreatePost({ onClose, avatar_url }) {
+    const avatarUrl = avatar_url || "/user.png"; // Default avatar if none provided
 
     const [MarkdownOnClick, setMarkdownOnClick] = useState(false);
     const [imagePreviews, setImagePreviews] = useState([]); // Array of {id: string, file: File, url: string}
@@ -125,11 +125,11 @@ export default function CreatePost({ onClose, userAvatar }) {
             <div className="flex flex-row items-start p-2 border-b border-gray-200">
                 <div className="p-2 flex-shrink-0">
                     <Image
-                        src={userAvatarSrc}
+                        src={avatarUrl}
                         alt="User Avatar"
-                        width={24}
-                        height={24}
-                        className="object-cover rounded-full"
+                        width={36}
+                        height={36}
+                        className="object-cover rounded-full ring-2 ring-offset-2 ring-[#B6B09F]"
                     />
                 </div>
 
