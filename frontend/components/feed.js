@@ -1,13 +1,13 @@
 import { PostCard } from "@/components/card";
 import { useEffect, useState } from "react";
-import { GetViewableUrl } from "@/lib/getViewableUrl";
 
-export default function Feed({ FeedData = [] }) {
+export default function Feed({ feedData = [] }) {
     const [authorProfiles, setAuthorProfiles] = useState({});
 
     useEffect(() => {
+
         // 取得所有唯一的 author_id
-        const uniqueAuthorIds = [...new Set(FeedData.map(post => post.author_id))];
+        const uniqueAuthorIds = [...new Set(feedData.map(post => post.author_id))];
         if (uniqueAuthorIds.length === 0) return;
 
         // 批次 fetch 所有作者資料
@@ -16,7 +16,10 @@ export default function Feed({ FeedData = [] }) {
                 try {
                     const res = await fetch(
                         `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${author_id}`
-                    );
+                    , {
+                        method: "GET",
+                        credentials: 'include', 
+                    });
 
                     if (!res.ok){
                         throw new Error(`Failed to fetch profile for author_id ${author_id}`);
@@ -24,10 +27,8 @@ export default function Feed({ FeedData = [] }) {
 
                     const profile = await res.json();
                     // 轉換 avatar_access_key 為 viewableUrl
-                    const viewableUrl = profile.avatar_access_key
-                        ? await GetViewableUrl(profile.avatar_access_key)
-                        : null;
-                    return [author_id, { ...profile, viewableUrl }];
+                    const avatar_url = profile.avatar_url || null;
+                    return [author_id, { ...profile, avatar_url }];
                 } catch {
                     return [author_id, null];
                 }
@@ -37,18 +38,17 @@ export default function Feed({ FeedData = [] }) {
             const profilesObj = Object.fromEntries(results);
             setAuthorProfiles(profilesObj);
         });
-    }, [FeedData]);
+    }, [feedData]);
 
-    return (FeedData.length === 0 ?
+    return (feedData.length === 0 ?
         <>
-            <PostCard />
-            <PostCard />
-            <PostCard />
-            <PostCard />
+            <div className="text-center text-gray-500 p-6">
+                <p className="text-lg">No posts available.</p>
+            </div>
         </>
         :
         <div>
-            {FeedData.map((post) => (
+            {feedData.map((post) => (
                 <PostCard
                     key={post.post_id || post.id}
                     post={post}
