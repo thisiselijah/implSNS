@@ -46,6 +46,7 @@ type Location struct {
 
 type PostFeedDTO struct {
 	PostID       string      `json:"post_id"`
+	AuthorID     string      `json:"author_id"` // 原始 Post 的作者 ID
 	AuthorName   string      `json:"author_name"` // 從 AuthorID 查詢得到的使用者名稱
 	Content      string      `json:"content"`
 	Media        []MediaItem `json:"media,omitempty"`      // MediaItem 應已在 feed_model.go 中定義
