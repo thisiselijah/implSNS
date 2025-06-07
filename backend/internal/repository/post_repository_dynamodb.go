@@ -1,3 +1,4 @@
+// backend/internal/repository/post_repository_dynamodb.go
 // internal/repository/post_repository_dynamodb.go
 package repository
 
@@ -5,9 +6,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	// "sort" // 用於排序
-	"strings"
 	"sync"
+	"time"
 
 	"backend/internal/models" // 假設您有 models.FeedItem 和 models.Post 結構
 
@@ -15,7 +15,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/google/uuid"
 )
+
+// --- 新增 PostRepository 介面 ---
+type PostRepository interface {
+	GetFeedItemsByUserID(ctx context.Context, userPK string) ([]models.FeedItem, error)
+	GetPostsByIDs(ctx context.Context, postIDs []string) ([]models.Post, error)
+	GetPostsByUserID(ctx context.Context, userID string) ([]models.Post, error)
+	CreatePost(ctx context.Context, post *models.Post) error
+	UpdatePost(ctx context.Context, post *models.Post) error
+	DeletePost(ctx context.Context, authorID, postID, createdAt string) error
+	GetPostByID(ctx context.Context, postID string) (*models.Post, error)
+}
+
 
 const FeedTableName = "Posts" // 假設您的表名
 
@@ -26,12 +39,171 @@ type DynamoDBPostRepository struct {
 }
 
 // NewDynamoDBPostRepository 建構子
-func NewDynamoDBPostRepository(client *dynamodb.Client) *DynamoDBPostRepository {
+func NewDynamoDBPostRepository(client *dynamodb.Client) PostRepository {
 	return &DynamoDBPostRepository{
 		client:    client,
 		tableName: FeedTableName, // 或者從配置讀取
 	}
 }
+
+// CreatePost 將新貼文儲存到 DynamoDB
+func (r *DynamoDBPostRepository) CreatePost(ctx context.Context, post *models.Post) error {
+	// 補全必要欄位
+	now := time.Now().UTC()
+	postID := uuid.New().String()
+	timestamp := now.Format(time.RFC3339Nano)
+
+	post.PostID = postID
+	post.CreatedAt = timestamp
+	post.UpdatedAt = timestamp
+	post.PK = "USER#" + post.AuthorID
+	post.SK = "POST#" + timestamp + "#" + postID
+	post.GSI1PK = "POST#" + postID
+	post.GSI1SK = "METADATA"
+	post.EntityType = "Post"
+
+	item, err := attributevalue.MarshalMap(post)
+	if err != nil {
+		log.Printf("Error marshalling post for CreatePost: %v", err)
+		return err
+	}
+
+	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(r.tableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("Error putting item to DynamoDB for CreatePost: %v", err)
+		return err
+	}
+	return nil
+}
+
+// GetPostsByAuthorID 透過 PK 查詢作者的所有貼文
+func (r *DynamoDBPostRepository) GetPostsByUserID(ctx context.Context, userID string) ([]models.Post, error) {
+	pk := "USER#" + userID
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		KeyConditionExpression: aws.String("PK = :pkval AND begins_with(SK, :skprefix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pkval":    &types.AttributeValueMemberS{Value: pk},
+			":skprefix": &types.AttributeValueMemberS{Value: "POST#"},
+		},
+		ScanIndexForward: aws.Bool(false), // 最新貼文在前
+	}
+
+	result, err := r.client.Query(ctx, queryInput)
+	if err != nil {
+		log.Printf("DynamoDB Query failed for GetPostsByAuthorID PK %s: %v", pk, err)
+		return nil, err
+	}
+
+	var posts []models.Post
+	if err := attributevalue.UnmarshalListOfMaps(result.Items, &posts); err != nil {
+		log.Printf("Failed to unmarshal posts for GetPostsByAuthorID PK %s: %v", pk, err)
+		return nil, err
+	}
+	return posts, nil
+}
+
+
+// UpdatePost 更新貼文內容
+func (r *DynamoDBPostRepository) UpdatePost(ctx context.Context, post *models.Post) error {
+	// 為了更新，我們需要知道完整的 Key (PK, SK)
+	// Service 層應先獲取 post，然後傳遞過來
+	key, err := attributevalue.MarshalMap(map[string]string{
+		"PK": post.PK,
+		"SK": post.SK,
+	})
+	if err != nil {
+		return err
+	}
+	
+	updateExpression := "SET content = :c, updatedAt = :u"
+	expressionAttributeValues, err := attributevalue.MarshalMap(map[string]interface{}{
+		":c": post.Content,
+		":u": time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return err
+	}
+	
+	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(r.tableName),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+		ReturnValues:              types.ReturnValueUpdatedNew,
+	})
+	
+	if err != nil {
+		log.Printf("Error updating post in DynamoDB: %v", err)
+		return err
+	}
+	
+	return nil
+}
+
+// DeletePost 刪除貼文
+func (r *DynamoDBPostRepository) DeletePost(ctx context.Context, authorID, postID, createdAt string) error {
+	// 為了刪除，我們需要重建 SK
+    // 注意：這種方法要求 createdAt 的格式必須與儲存時完全一致
+	pk := "USER#" + authorID
+	// SK 的重建依賴於 CreatedAt 和 PostID
+	// 這是一個潛在的脆弱點，如果 SK 的生成邏輯改變，這裡也要改
+	sk := fmt.Sprintf("POST#%s#%s", createdAt, postID)
+
+
+	key, err := attributevalue.MarshalMap(map[string]string{
+		"PK": pk,
+		"SK": sk,
+	})
+	if err != nil {
+		log.Printf("Error marshalling key for DeletePost: %v", err)
+		return err
+	}
+
+	_, err = r.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(r.tableName),
+		Key:       key,
+	})
+
+	if err != nil {
+		log.Printf("Error deleting post from DynamoDB: %v", err)
+		return err
+	}
+	return nil
+}
+
+
+// GetPostByID 透過 GSI 查詢單一貼文
+func (r *DynamoDBPostRepository) GetPostByID(ctx context.Context, postID string) (*models.Post, error) {
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :gsi1pkval AND GSI1SK = :gsi1skval"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":gsi1pkval": &types.AttributeValueMemberS{Value: "POST#" + postID},
+			":gsi1skval": &types.AttributeValueMemberS{Value: "METADATA"},
+		},
+	}
+	result, err := r.client.Query(ctx, queryInput)
+	if err != nil {
+		log.Printf("Error querying GSI1 for GetPostByID %s: %v", postID, err)
+		return nil, err
+	}
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("post with ID %s not found", postID)
+	}
+
+	var post models.Post
+	if err := attributevalue.UnmarshalMap(result.Items[0], &post); err != nil {
+		log.Printf("Error unmarshalling post for GetPostByID %s: %v", postID, err)
+		return nil, err
+	}
+	return &post, nil
+}
+
 
 // GetFeedItemsByUserID 從 DynamoDB 獲取指定用戶的 Feed Item 列表
 // PK = USER#{userID}, SK starts_with FEEDITEM#
@@ -135,36 +307,15 @@ func (r *DynamoDBPostRepository) GetPostsByIDs(ctx context.Context, postIDs []st
 		go func(postID string) {
 			defer wg.Done()
 			// 這裡模擬 GetPostByID 內部查詢 GSI1 的邏輯
-			queryInput := &dynamodb.QueryInput{
-				TableName:              aws.String(r.tableName),
-				IndexName:              aws.String("GSI1"), // 使用 GSI1 (PostLookup)
-				KeyConditionExpression: aws.String("GSI1PK = :gsi1pkval AND GSI1SK = :gsi1skval"),
-				ExpressionAttributeValues: map[string]types.AttributeValue{
-					":gsi1pkval":    &types.AttributeValueMemberS{Value: "POST#" + postID},
-					":gsi1skval": &types.AttributeValueMemberS{Value: "METADATA"},
-				},
-			}
-			result, err := r.client.Query(ctx, queryInput)
+			post, err := r.GetPostByID(ctx, postID)
 			if err != nil {
-				log.Printf("Error querying GSI1 for postID %s: %v", postID, err)
+				log.Printf("Error getting post by ID %s in GetPostsByIDs: %v", postID, err)
 				return
 			}
-			if len(result.Items) > 0 {
-				var post models.Post
-				if err := attributevalue.UnmarshalMap(result.Items[0], &post); err == nil {
-					// 確保 PostID 被正確填充
-					if post.PostID == "" && strings.HasPrefix(post.GSI1PK, "POST#") { // 假設 GSI1PK 包含 PostID
-						post.PostID = strings.TrimPrefix(post.GSI1PK, "POST#")
-					}
-					mu.Lock()
-					posts = append(posts, post)
-					mu.Unlock()
-				} else {
-					log.Printf("Error unmarshalling post for postID %s: %v", postID, err)
-				}
-			} else {
-                log.Printf("Post not found via GSI1 for postID %s", postID)
-            }
+			mu.Lock()
+			posts = append(posts, *post)
+			mu.Unlock()
+			
 		}(id)
 	}
     wg.Wait()
@@ -173,9 +324,3 @@ func (r *DynamoDBPostRepository) GetPostsByIDs(ctx context.Context, postIDs []st
 	log.Printf("Successfully fetched %d posts by IDs", len(posts))
 	return posts, nil
 }
-
-
-// --- 其他 Post Repository 方法 (CreatePost, GetPostByID 等) ---
-// func (r *DynamoDBPostRepository) GetPostByID(ctx context.Context, postID string) (*models.Post, error) { ... }
-// func (r *DynamoDBPostRepository) CreatePost(ctx context.Context, post *models.Post) error { ... }
-// ...

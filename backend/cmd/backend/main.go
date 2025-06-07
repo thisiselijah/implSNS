@@ -1,3 +1,4 @@
+// backend/cmd/backend/main.go
 package main
 
 import (
@@ -41,19 +42,22 @@ func main() {
 	}
 
 	// 3. 初始化 Repositories
-	userRepo := repository.NewMySQLUserRepository(mysqlDB)          //
-	tokenBlacklistRepo := repository.NewMemoryTokenBlacklist()      //
+	userRepo := repository.NewMySQLUserRepository(mysqlDB)
+	tokenBlacklistRepo := repository.NewMemoryTokenBlacklist()
+	postRepo := repository.NewDynamoDBPostRepository(awsdynamoDB) // <-- 新增 PostRepository
 
 	// 4. 初始化 Services
 	authService := service.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWT.SecretKey, cfg.JWT.ExpiryMinutes)
-	profileService := service.NewProfileService(userRepo) // <-- 新增 ProfileService
+	profileService := service.NewProfileService(userRepo)
+	postService := service.NewPostService(postRepo) // <-- 新增 PostService
 
 	// 5. 初始化 Handlers
 	authHandler := handler.NewAuthHandler(*authService, cfg.JWT.ExpiryMinutes)
-	profileHandler := handler.NewProfileHandler(profileService) // <-- 新增 ProfileHandler
+	profileHandler := handler.NewProfileHandler(profileService)
+	postHandler := handler.NewPostHandler(postService) // <-- 新增 PostHandler
 
 	// 6. 初始化 Router
-	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, profileHandler, userRepo) // <-- 傳入 profileHandler
+	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, profileHandler, postHandler, userRepo) // <-- 傳入 postHandler
 
 	// 7. 啟動伺服器
 	log.Println("Server starting on port :8080") //

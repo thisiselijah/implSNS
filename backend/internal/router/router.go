@@ -1,3 +1,4 @@
+// backend/internal/router/router.go
 package router
 
 import (
@@ -13,7 +14,7 @@ import (
 
 // NewRouter 負責初始化 Gin 引擎並設定所有應用程式的路由
 // 新增 userRepo repository.UserRepository 參數
-func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, userRepo repository.UserRepository) *gin.Engine { // <--- 修改簽名
+func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, postHandler *handler.PostHandler, userRepo repository.UserRepository) *gin.Engine { // <--- 修改簽名
 	r := gin.Default()
 
 	// --- 設定 CORS 中介軟體 ---
@@ -43,12 +44,34 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 		testRoutes.GET("/mysql/tables", handler.GetTables(mysqlDB))
 		testRoutes.GET("/dynamodb//tables", handler.GetDynamoDBTables(dynamoDBClient))
 	}
-	
+
+	userRoutes := apiV1.Group("/users")
+	{
+		userRoutes.GET("/search", )    // 搜尋使用者
+		userRoutes.POST("/follow", )   // 追蹤使用者
+		userRoutes.POST("/unfollow", ) // 取消追蹤使用者
+		userRoutes.GET("/followers/:userID", ) // 獲取使用者的追蹤者
+		userRoutes.GET("/following/:userID", ) // 獲取使用者追蹤的使用者
+
+	}
+
 	pagesRoutes := apiV1.Group("/pages")
 	{
+		// --- Posts ---
+		// 將 postHandler 的方法綁定到路由
+		pagesRoutes.POST("/posts", postHandler.CreatePost)               // Create a new posts
+		pagesRoutes.GET("/posts/:userID", postHandler.GetPostsByUserID) // Get posts by author
+		pagesRoutes.POST("/posts/delete", postHandler.DeletePost)         // Delete a post
+		pagesRoutes.PUT("/posts/edit", postHandler.UpdatePost)             // Edit a post
+
+		pagesRoutes.POST("/posts/like/:postID", )    // Like a post
+		pagesRoutes.POST("/posts/unlike/:postID", )  // Unlike a post
+		pagesRoutes.POST("/posts/comment/:postID", ) // Comment on a post
+		pagesRoutes.POST("/posts/delete-comment/:postID", ) // Delete a comment on a post
+
 		// Feed
-		pagesRoutes.GET("/posts/feed/:userID", handler.GetFeedPosts(dynamoDBClient, userRepo)) 
-		
+		pagesRoutes.GET("/posts/feed/:userID", handler.GetFeedPosts(dynamoDBClient, userRepo))
+
 		// Profile
 		profileRoutes := pagesRoutes.Group("/profile/:userID") // 將 userID 作為共同前綴
 		{

@@ -88,7 +88,7 @@ func (h *ProfileHandler) UpdateAvatar(c *gin.Context) {
 		return
 	}
 
-	updatedProfile, err := h.profileService.UpdateAvatar(uint(userID), payload.AvatarAccessKey)
+	updatedProfile, err := h.profileService.UpdateAvatar(uint(userID), payload.AvatarURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
