@@ -25,7 +25,7 @@ export function PostCard({ post, authorProfile }) {
   const {
     id = "default-key",
     author_name = authorProfile?.username || "Default User",
-    author_avatar = authorProfile?.viewableUrl || null,
+    avatar_url = authorProfile?.avatar_url || null,
     content = "這是貼文的主要內容。Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
     like_count = 14,
     comment_count = 0,
@@ -54,9 +54,9 @@ export function PostCard({ post, authorProfile }) {
     <article className="bg-white p-6 w-full border-t border-gray-200">
       <div className="flex items-center p-2">
         <img
-          src={author_avatar}
+          src={avatar_url}
           alt={`${author_name}'s avatar`}
-          className="w-12 h-12 rounded-full mr-4 object-cover"
+          className="w-12 h-12 rounded-full mr-4 object-cover ring-1 ring-offset-1 ring-[#B6B09F]"
         />
         <div>
           <h4 className="font-semibold text-gray-800">{author_name}</h4>
