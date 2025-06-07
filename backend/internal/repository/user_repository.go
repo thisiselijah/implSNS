@@ -117,7 +117,7 @@ func (r *mysqlUserRepository) GetUserProfileByUserID(userID uint) (*models.UserP
     ctx := context.Background()
     // 加入 JOIN 查詢 username
     query := `
-        SELECT up.id, up.user_id, up.avatar_access_key, up.birth_date, up.bio, up.updated_at, u.username
+        SELECT up.id, up.user_id, up.avatar_url, up.birth_date, up.bio, up.updated_at, u.username
         FROM user_profiles up
         JOIN users u ON up.user_id = u.id
         WHERE up.user_id = ?`
@@ -125,7 +125,7 @@ func (r *mysqlUserRepository) GetUserProfileByUserID(userID uint) (*models.UserP
 
     var profile models.UserProfile
     var username string
-    err := row.Scan(&profile.ID, &profile.UserID, &profile.AvatarAccessKey, &profile.BirthDate, &profile.Bio, &profile.UpdatedAt, &username)
+    err := row.Scan(&profile.ID, &profile.UserID, &profile.AvatarURL, &profile.BirthDate, &profile.Bio, &profile.UpdatedAt, &username)
     if err != nil {
         if err == sql.ErrNoRows {
             return nil, err // 回傳錯誤，讓 service 層知道沒有找到 profile
@@ -142,7 +142,7 @@ func (r *mysqlUserRepository) UpdateUserProfile(profile *models.UserProfile) err
 	ctx := context.Background()
 	// 注意：這裡我們假設 profile 物件中包含了所有需要更新的欄位
 	// updatedAt 會由資料庫自動更新
-	query := `UPDATE user_profiles SET avatar_access_key = ?, bio = ?, birth_date = ? WHERE user_id = ?`
+	query := `UPDATE user_profiles SET avatar_url = ?, bio = ?, birth_date = ? WHERE user_id = ?`
 	stmt, err := r.db.PrepareContext(ctx, query)
 	if err != nil {
 		log.Printf("Error preparing statement for UpdateUserProfile: %v", err)
@@ -150,7 +150,7 @@ func (r *mysqlUserRepository) UpdateUserProfile(profile *models.UserProfile) err
 	}
 	defer stmt.Close()
 
-	_, err = stmt.ExecContext(ctx, profile.AvatarAccessKey, profile.Bio, profile.BirthDate, profile.UserID)
+	_, err = stmt.ExecContext(ctx, profile.AvatarURL, profile.Bio, profile.BirthDate, profile.UserID)
 	if err != nil {
 		log.Printf("Error executing statement for UpdateUserProfile: %v", err)
 		return err
@@ -161,7 +161,7 @@ func (r *mysqlUserRepository) UpdateUserProfile(profile *models.UserProfile) err
 // CreateUserProfile 創建一筆新的使用者個人資料
 func (r *mysqlUserRepository) CreateUserProfile(profile *models.UserProfile) error {
 	ctx := context.Background()
-	query := `INSERT INTO user_profiles (user_id, avatar_access_key, bio, birth_date) VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO user_profiles (user_id, avatar_url, bio, birth_date) VALUES (?, ?, ?, ?)`
 	stmt, err := r.db.PrepareContext(ctx, query)
 	if err != nil {
 		log.Printf("Error preparing statement for CreateUserProfile: %v", err)
@@ -169,7 +169,7 @@ func (r *mysqlUserRepository) CreateUserProfile(profile *models.UserProfile) err
 	}
 	defer stmt.Close()
 
-	result, err := stmt.ExecContext(ctx, profile.UserID, profile.AvatarAccessKey, profile.Bio, profile.BirthDate)
+	result, err := stmt.ExecContext(ctx, profile.UserID, profile.AvatarURL, profile.Bio, profile.BirthDate)
 	if err != nil {
 		log.Printf("Error executing statement for CreateUserProfile: %v", err)
 		return err

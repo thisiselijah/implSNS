@@ -63,13 +63,13 @@ func (s *ProfileService) UpdateBio(userID uint, bio string) (*models.UserProfile
 }
 
 // UpdateAvatar 更新頭像 URL
-func (s *ProfileService) UpdateAvatar(userID uint, avatarURL string) (*models.UserProfile, error) {
+func (s *ProfileService) UpdateAvatar(userID uint, AvatarURL string) (*models.UserProfile, error) {
 	profile, err := s.GetProfileByUserID(userID) // 複用 GetProfileByUserID 確保 profile 存在
 	if err != nil {
 		return nil, err
 	}
 
-	profile.AvatarAccessKey = avatarURL
+	profile.AvatarURL = AvatarURL
 	if err := s.userRepo.UpdateUserProfile(profile); err != nil {
 		log.Printf("Error updating avatar in repo for user ID %d: %v", userID, err)
 		return nil, errors.New("failed to update avatar")

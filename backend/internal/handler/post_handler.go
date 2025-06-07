@@ -1,15 +1,102 @@
+// backend/internal/handler/post_handler.go
 // internal/handler/post_handler.go
 package handler
 
 import (
 	"backend/internal/models"      // 引入 models，其中包含 PostFeedDTO 和 Post (from feed_model)
 	"backend/internal/repository" // 引入 repository 介面
+	"backend/internal/service"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 	"strconv" // 用於將 string 類型的 AuthorID 轉換為 uint
 )
+
+// PostHandler 結構
+type PostHandler struct {
+	postService *service.PostService
+}
+
+// NewPostHandler 建構子
+func NewPostHandler(postService *service.PostService) *PostHandler {
+	return &PostHandler{
+		postService: postService,
+	}
+}
+
+// CreatePost 處理新增貼文請求
+func (h *PostHandler) CreatePost(c *gin.Context) {
+	var payload models.CreatePostPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	post, err := h.postService.CreatePost(c.Request.Context(), payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create post"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, post)
+}
+
+// GetPostsByAuthorID 處理獲取作者貼文的請求
+func (h *PostHandler) GetPostsByUserID(c *gin.Context) {
+	userID := c.Param("userID") // 從 URL 路徑中獲取 userID
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "userID is required"})
+		return
+	}
+
+	posts, err := h.postService.GetPostsByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get posts"})
+		return
+	}
+
+	c.JSON(http.StatusOK, posts)
+}
+
+// UpdatePost 處理編輯貼文的請求
+func (h *PostHandler) UpdatePost(c *gin.Context) {
+	var payload models.UpdatePostPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	updatedPost, err := h.postService.UpdatePost(c.Request.Context(), payload)
+	if err != nil {
+		// 可以根據 service 層回傳的錯誤類型給出更精確的狀態碼
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Post updated successfully",
+		"post":    updatedPost,
+	})
+}
+
+// DeletePost 處理刪除貼文的請求
+func (h *PostHandler) DeletePost(c *gin.Context) {
+	var payload models.DeletePostPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	err := h.postService.DeletePost(c.Request.Context(), payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Post deleted successfully"})
+}
+
 
 // GetFeedPosts 處理獲取使用者 Feed 的請求
 // 現在也接收 userRepo (UserRepository) 來查詢作者名稱
