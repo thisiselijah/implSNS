@@ -13,7 +13,7 @@ import (
 
 // NewRouter 負責初始化 Gin 引擎並設定所有應用程式的路由
 // 新增 userRepo repository.UserRepository 參數
-func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, userRepo repository.UserRepository) *gin.Engine { // <--- 修改簽名
+func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, userRepo repository.UserRepository) *gin.Engine { // <--- 修改簽名
 	r := gin.Default()
 
 	// --- 設定 CORS 中介軟體 ---
@@ -44,11 +44,18 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 		testRoutes.GET("/dynamodb//tables", handler.GetDynamoDBTables(dynamoDBClient))
 	}
 	
-	postRoutes := apiV1.Group("/pages")
+	pagesRoutes := apiV1.Group("/pages")
 	{
-		// Feed 
-		// 將 userRepo 傳遞給 GetFeedPosts
-		postRoutes.GET("/posts/feed/:userID", handler.GetFeedPosts(dynamoDBClient, userRepo)) // <--- 修改呼叫
+		// Feed
+		pagesRoutes.GET("/posts/feed/:userID", handler.GetFeedPosts(dynamoDBClient, userRepo)) 
+		
+		// Profile
+		profileRoutes := pagesRoutes.Group("/profile/:userID") // 將 userID 作為共同前綴
+		{
+			profileRoutes.GET("", profileHandler.GetProfileByUserID)
+			profileRoutes.PUT("/avatar", profileHandler.UpdateAvatar)
+			profileRoutes.PUT("/bio", profileHandler.UpdateBio)
+		}
 	}
 
 	return r
