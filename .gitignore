@@ -1,6 +1,4 @@
 .DS_Store
-./backend/config/config.yaml
-./frontend/nextjs-blog/node_modules/*
-./frontend/nextjs-blog/.next/*
-./frontend/frontend/node_modules/*
-./frontend/frontend/.next/*
+./backend/config/*.yaml
+./frontend/node_modules/*
+./frontend/.next/*

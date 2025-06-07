@@ -27,6 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Fail to connect to MySQL: %v", err) //
 	}
+	defer mysqlDB.Close()
 
 	awsdynamoDB, err := db.InitDynamoDB( //
 		cfg.DynamoDB.Region,       //
@@ -43,14 +44,16 @@ func main() {
 	userRepo := repository.NewMySQLUserRepository(mysqlDB)          //
 	tokenBlacklistRepo := repository.NewMemoryTokenBlacklist()      //
 
-	// 4. 初始化 AuthService
-	authService := service.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWT.SecretKey, cfg.JWT.ExpiryMinutes) //
+	// 4. 初始化 Services
+	authService := service.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWT.SecretKey, cfg.JWT.ExpiryMinutes)
+	profileService := service.NewProfileService(userRepo) // <-- 新增 ProfileService
 
-	// 5. 初始化 AuthHandler
-	authHandler := handler.NewAuthHandler(*authService, cfg.JWT.ExpiryMinutes) //
+	// 5. 初始化 Handlers
+	authHandler := handler.NewAuthHandler(*authService, cfg.JWT.ExpiryMinutes)
+	profileHandler := handler.NewProfileHandler(profileService) // <-- 新增 ProfileHandler
 
-	// 6. 初始化 Router, 將 userRepo 傳遞進去
-	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, userRepo) // <--- 修改此處, 傳入 userRepo
+	// 6. 初始化 Router
+	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, profileHandler, userRepo) // <-- 傳入 profileHandler
 
 	// 7. 啟動伺服器
 	log.Println("Server starting on port :8080") //
