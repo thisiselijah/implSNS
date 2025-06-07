@@ -93,6 +93,7 @@ func GetFeedPosts(dynamoDBClient *dynamodb.Client, userRepo repository.UserRepos
 				// 建立 DTO
 				dto := models.PostFeedDTO{
 					PostID:       post.PostID,       //
+					AuthorID:     post.AuthorID,     // 原始 Post 的作者 ID
 					AuthorName:   authorName,        // 使用查詢到的名稱
 					Content:      post.Content,      //
 					Media:        post.Media,        //
