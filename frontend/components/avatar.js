@@ -5,13 +5,12 @@ import Link from "next/link";
 export default function Avatar(props) {
   const authContext = props.authContext;
   const router = props.router;
-  const [username, setUsername] = useState("Guest");
+  const username = props.username;
+  const avatar_url = props.avatar_url;
   const [user_id, serUser_id] = useState(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const name = localStorage.getItem("username") || "Guest";
-      setUsername(name);
       const user_id = localStorage.getItem("user_id");
       serUser_id(user_id);
     }
@@ -23,7 +22,7 @@ export default function Avatar(props) {
         <Link href={"/profile/"+user_id} className="mb-2 flex flex-col items-center gap-2">
          <img
           alt={username}
-          src="https://images.unsplash.com/photo-1491528323818-fdd1faba62cc?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
+          src={avatar_url}
           className="inline-block size-16 rounded-full ring-2 ring-offset-2 ring-[#B6B09F]"
         />
         <h3 className="text-xl font-semibold text-gray-800">{username}</h3>

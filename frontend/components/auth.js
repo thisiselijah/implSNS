@@ -1,5 +1,4 @@
 // auth.js
-const loginUrl = "http://localhost:8080/api/v1/auth/login"; 
 export default function Auth({ onClose, onLoginSuccess }) {
 
 
@@ -8,8 +7,8 @@ export default function Auth({ onClose, onLoginSuccess }) {
 
     console.log("Form submitted in Auth component");
     try {
-      const response = await fetch(loginUrl, {
-        //
+      const response = await fetch(
+        process.env.NEXT_PUBLIC_API_BASE_URL+process.env.NEXT_PUBLIC_LOGIN_API, {
         method: "POST", //
         headers: {
           //
@@ -216,7 +215,7 @@ export default function Auth({ onClose, onLoginSuccess }) {
         {/* */}
         Not a member? {/* */}
         <a
-          href="#"
+          href="/register"
           className="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
         >
           {" "}

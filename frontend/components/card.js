@@ -20,12 +20,12 @@ export function NavigationCard({
   );
 }
 
-export function PostCard({ post }) {
+export function PostCard({ post, authorProfile }) {
   // 支援 post prop 結構，也保留 fallback
   const {
     id = "default-key",
-    author_name = "Default User",
-    author_avatar = "https://images.unsplash.com/photo-1491528323818-fdd1faba62cc?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
+    author_name = authorProfile?.username || "Default User",
+    author_avatar = authorProfile?.viewableUrl || null,
     content = "這是貼文的主要內容。Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
     like_count = 14,
     comment_count = 0,
