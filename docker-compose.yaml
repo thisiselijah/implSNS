@@ -39,7 +39,7 @@ services:
       - backend
 
 # # 啟動所有服務
-# docker-compose up -d
+# docker-compose up --build -d
 
 # # 查看所有服務的日誌
 # docker-compose logs -f
