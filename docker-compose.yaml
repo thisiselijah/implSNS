@@ -51,3 +51,5 @@ services:
 # docker-compose down
 
 # sudo service docker start
+# sudo systemctl stop httpd
+# docker system prune -a
