@@ -18,7 +18,7 @@ COPY . .
 
 # 編譯 Go 應用程式，假設你的主程式入口在 ./cmd/
 # 將編譯結果輸出到 /app/main
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/backend/
+# RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/backend/
 
 # ---- Stage 2: Production ----
 # 使用一個極度輕量的空白 image
