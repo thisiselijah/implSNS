@@ -7,7 +7,7 @@ import CreatePost from "@/components/createpost";
 import { PostsNavbar } from "@/components/navbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/router";
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import LeftPanel from "@/components/leftpanel";
 
 export async function getServerSideProps(context) {
@@ -29,7 +29,7 @@ export async function getServerSideProps(context) {
   let userId = null;
   try {
     const statusRes = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/status`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_STATUS_API}`,
       {
         method: "GET",
         headers: {
@@ -47,6 +47,7 @@ export async function getServerSideProps(context) {
   }
 
   if (!userId) {
+    console.warn("SSR: 無法取得 userId，可能是 jwt_token 無效或已過期。");
     return {
       redirect: {
         destination: "/",
@@ -58,7 +59,7 @@ export async function getServerSideProps(context) {
   try {
     // 取得貼文動態
     const feedResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_FEED_API}${userId}`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_FEED_API}${userId}`,
       {
         method: "GET",
         headers: {
@@ -80,7 +81,7 @@ export async function getServerSideProps(context) {
 
 
     const profileResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${userId}`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${userId}`,
       {
         method: "GET",
         headers: {

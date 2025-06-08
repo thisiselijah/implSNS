@@ -27,7 +27,7 @@ export async function getServerSideProps(context) {
   let loggedInUserId = null;
   try {
     const statusRes = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/status`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_STATUS_API}`,
       {
         method: "GET",
         headers: {
@@ -46,7 +46,7 @@ export async function getServerSideProps(context) {
 
   // fetch user profile data
   const profileRes = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${profileIdFromUrl}`,
+    `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${profileIdFromUrl}`,
     {
       method: "GET",
       headers: {
@@ -68,7 +68,7 @@ export async function getServerSideProps(context) {
 
   // fetch user's posts
   const postsRes = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${profileIdFromUrl}`,
+    `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${profileIdFromUrl}`,
     {
       method: "GET",
       headers: {
@@ -93,7 +93,7 @@ export async function getServerSideProps(context) {
   let followingCount = 0;
   try {
     const followersRes = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/followers`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/followers`,
       {
         method: "GET",
         headers: {
@@ -107,7 +107,7 @@ export async function getServerSideProps(context) {
     }
 
     const followingRes = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/following`,
+      `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/following`,
       {
         method: "GET",
         headers: {
@@ -130,7 +130,7 @@ export async function getServerSideProps(context) {
   if (loggedInUserId && loggedInUserId !== profileIdFromUrl) {
     try {
       const followingRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${loggedInUserId}/following`,
+        `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${loggedInUserId}/following`,
         {
           method: "GET",
           headers: {
