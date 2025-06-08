@@ -38,3 +38,6 @@ CREATE TABLE `follows` (
   UNIQUE KEY `unique_follow` (`follower_id`, `followed_id`)
 );
 
+SELECT * FROM `follows`;
+
+DELETE  FROM `follows` WHERE id = 8;
