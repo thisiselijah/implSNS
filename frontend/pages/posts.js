@@ -72,7 +72,7 @@ export async function getServerSideProps(context) {
       throw new Error(`無法載入動態 (Code: ${feedResponse.status})`);
     }
     let feedData = await feedResponse.json();
-    feedData = feedData.data;
+    feedData = feedData.data || [];
 
     console.log("SSR: Initial feed data:", feedData);
 
@@ -101,7 +101,7 @@ export async function getServerSideProps(context) {
     return {
       props: {
         userId,
-        feedData,
+        feedData, // 這裡可以選擇傳入 feedData 或者在客戶端使用 useAuth 獲
         avatar_url: profileData.avatar_url || null,
         username: profileData.username || null,
         error: null,
