@@ -69,10 +69,11 @@ export async function getServerSideProps(context) {
   // fetch user's posts
   const postsRes = await fetch(
     `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${profileIdFromUrl}`,
-    { method: "GET"
-      , headers: {
+    {
+      method: "GET",
+      headers: {
         cookie: `jwt_token=${jwtToken}`,
-     },
+      },
     }
   );
   if (!postsRes.ok) {
@@ -87,6 +88,70 @@ export async function getServerSideProps(context) {
     };
   }
 
+  // fetch user's followers and following counts
+  try {
+    const followersRes = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/followers`,
+      {
+        method: "GET",
+        headers: {
+          cookie: `jwt_token=${jwtToken}`,
+        },
+      }
+    );
+    if (!followersRes.ok) {
+      throw new Error("Failed to fetch followers");
+    }
+    const followersData = await followersRes.json();
+    profileData.followersCount = followersData.length;
+
+    const followingRes = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/following`,
+      {
+        method: "GET",
+        headers: {
+          cookie: `jwt_token=${jwtToken}`,
+        },
+      }
+    );
+    if (!followingRes.ok) {
+      throw new Error("Failed to fetch following");
+    }
+    const followingData = await followingRes.json();
+    profileData.followingCount = followingData === null ? 0 : followingData.length;
+  } catch (error) {
+    console.error("Error fetching followers or following:", error);
+    // 如果有錯誤，則設置默認值
+    profileData.followersCount = 0;
+    profileData.followingCount = 0;
+  }
+
+  // get current user's following status
+  let isFollowing = false;
+  if (loggedInUserId && loggedInUserId !== profileIdFromUrl) {
+    try {
+      const followingRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${loggedInUserId}/following`,
+        {
+          method: "GET",
+          headers: {
+            cookie: `jwt_token=${jwtToken}`,
+          },
+        }
+      );
+      if (followingRes.ok) {
+        const followingData = await followingRes.json();
+        isFollowing = followingData.some(
+          (user) => user.user_id === profileIdFromUrl
+        );
+      }
+    } catch (error) {
+      console.error("Error checking following status:", error);
+      // 如果有錯誤，則默認為未關注
+      isFollowing = false;
+    }
+  }
+
   return {
     props: {
       profileId: profileIdFromUrl,
@@ -98,6 +163,7 @@ export async function getServerSideProps(context) {
         bio: profileData.bio || "The user is too lazy to write a bio",
       },
       postsData: postsData || [],
+      isFollowing: isFollowing,
     },
   };
 }
@@ -107,6 +173,7 @@ export default function Profile({
   currentUserId,
   profileData,
   postsData,
+  isFollowing,
 }) {
   const isOwnProfile = profileId === currentUserId && currentUserId !== null;
   const [editOnClick, setEditOnClick] = useState(false);
@@ -122,6 +189,7 @@ export default function Profile({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [displayUrl, setDisplayUrl] = useState(profileData.avatar_url);
   const [uploadingDots, setUploadingDots] = useState(0);
+  const [isFollowed, setIsFollowed] = useState(isFollowing);
 
   useEffect(() => {
     let interval;
@@ -259,6 +327,39 @@ export default function Profile({
     }
   };
 
+  // follow/unfollow 按鈕的處理函式
+  const handleFollowClick = async () => {
+  if (isOwnProfile) return;
+  try {
+    let res;
+    if (!isFollowed) {
+      // Follow
+      res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/follow`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+      if (!res.ok) throw new Error("Follow 操作失敗，請稍後再試");
+      setIsFollowed((prev) => !prev);
+    } else {
+      // Unfollow
+      res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/unfollow`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+      if (!res.ok) throw new Error("Unfollow 操作失敗，請稍後再試");
+      setIsFollowed((prev) => !prev);
+    }
+  } catch (error) {
+    alert(`${isFollowed ? "Unfollow" : "Follow"} 操作失敗：${error.message}`);
+  }
+};
+
   return (
     <Layout pageTitle={isOwnProfile ? "Profile" : `Profile-${profileId}`}>
       <ProfileNavbar />
@@ -309,6 +410,51 @@ export default function Profile({
                   <p>Follwers: 0</p>
                   <p>Follwing: 0</p>
                 </div>
+                {!isOwnProfile && (
+                  <button
+                    onClick={handleFollowClick}
+                    className={`px-4 py-2 rounded ${
+                      isFollowed
+                        ? "bg-white text-black border border-gray-400 hover:bg-gray-100"
+                        : "bg-black text-white hover:bg-gray-600"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <p>{isFollowed ? "Unfollow" : "Follow"}</p>
+                      {isFollowed ? (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                          className="size-4"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                          className="size-4"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 4.5v15m7.5-7.5h-15"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+                )}
                 {isOwnProfile && (
                   <button onClick={handleEditOrDone}>
                     <div className="bg-black text-white hover:bg-gray-600 px-4 py-2 rounded ">
