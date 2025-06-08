@@ -2,6 +2,9 @@
 # 使用官方 Go image 作為建置環境
 FROM golang:1.24-alpine AS builder
 
+# 安裝 ca-certificates 套件確保憑證存在
+RUN apk add --no-cache ca-certificates
+
 # 設定工作目錄
 WORKDIR /app
 
@@ -20,6 +23,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/backend/
 # ---- Stage 2: Production ----
 # 使用一個極度輕量的空白 image
 FROM scratch
+
+# 【*** 修正點 ***】
+# 從 builder 階段複製 CA 憑證到正式環境中
+# Go 應用程式會自動在這些預設路徑尋找憑證
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # 將最終執行檔從 builder 階段複製過來
 COPY --from=builder /app/main /main
