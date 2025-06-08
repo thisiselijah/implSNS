@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, postHandler *handler.PostHandler, userRepo repository.UserRepository, authMiddleware *middleware.AuthMiddleware) *gin.Engine {
+func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, postHandler *handler.PostHandler, userHandler *handler.UserHandler, userRepo repository.UserRepository, authMiddleware *middleware.AuthMiddleware) *gin.Engine {
 	r := gin.Default()
 
 	// --- CORS 中介軟體設定 ---
@@ -44,6 +44,15 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 		// 登出需要驗證身份，以識別要加入黑名單的 token
 		authRequired.POST("/auth/logout", authHandler.Logout)
 		authRequired.GET("/auth/status", authHandler.GetAuthStatus)
+
+		// 使用者相關操作
+		userRoutes := authRequired.Group("/users")
+		{
+			userRoutes.POST("/:userID/follow", userHandler.FollowUser)
+			userRoutes.POST("/:userID/unfollow", userHandler.UnfollowUser)
+			userRoutes.GET("/:userID/followers", userHandler.GetFollowers)
+			userRoutes.GET("/:userID/following", userHandler.GetFollowing)
+		}
 
 		// 頁面相關內容的群組
 		pagesRoutes := authRequired.Group("/pages")

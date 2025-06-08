@@ -18,6 +18,11 @@ type UserRepository interface {
 	GetUserProfileByUserID(userID uint) (*models.UserProfile, error)
 	UpdateUserProfile(profile *models.UserProfile) error
 	CreateUserProfile(profile *models.UserProfile) error
+	// --- Follow/Unfollow ---
+	FollowUser(followerID, followedID uint) error
+	UnfollowUser(followerID, followedID uint) error
+	GetFollowers(userID uint) ([]models.User, error)
+	GetFollowing(userID uint) ([]models.User, error)
 }
 
 // mysqlUserRepository 實現了 UserRepository 介面，用於 MySQL 資料庫
@@ -30,6 +35,101 @@ func NewMySQLUserRepository(db *sql.DB) UserRepository {
 	return &mysqlUserRepository{db: db}
 }
 
+// GetFollowers 獲取指定使用者的粉絲列表
+func (r *mysqlUserRepository) GetFollowers(userID uint) ([]models.User, error) {
+	ctx := context.Background()
+	query := `
+		SELECT u.id, u.username, u.email, u.created_at, u.updated_at
+		FROM users u
+		INNER JOIN follows f ON u.id = f.follower_id
+		WHERE f.followed_id = ?`
+	
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		log.Printf("Error querying followers for user ID %d: %v", userID, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var followers []models.User
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			log.Printf("Error scanning follower row: %v", err)
+			continue
+		}
+		followers = append(followers, user)
+	}
+
+	return followers, nil
+}
+
+// GetFollowing 獲取指定使用者正在追蹤的列表
+func (r *mysqlUserRepository) GetFollowing(userID uint) ([]models.User, error) {
+	ctx := context.Background()
+	query := `
+		SELECT u.id, u.username, u.email, u.created_at, u.updated_at
+		FROM users u
+		INNER JOIN follows f ON u.id = f.followed_id
+		WHERE f.follower_id = ?`
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		log.Printf("Error querying following for user ID %d: %v", userID, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var following []models.User
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			log.Printf("Error scanning following row: %v", err)
+			continue
+		}
+		following = append(following, user)
+	}
+
+	return following, nil
+}
+
+// FollowUser 創建一個新的追蹤關係
+func (r *mysqlUserRepository) FollowUser(followerID, followedID uint) error {
+	ctx := context.Background()
+	query := "INSERT INTO follows (follower_id, followed_id) VALUES (?, ?)"
+	stmt, err := r.db.PrepareContext(ctx, query)
+	if err != nil {
+		log.Printf("Error preparing statement for FollowUser: %v", err)
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, followerID, followedID)
+	if err != nil {
+		log.Printf("Error executing statement for FollowUser: %v", err)
+		return err
+	}
+	return nil
+}
+
+// UnfollowUser 移除一個追蹤關係
+func (r *mysqlUserRepository) UnfollowUser(followerID, followedID uint) error {
+	ctx := context.Background()
+	query := "DELETE FROM follows WHERE follower_id = ? AND followed_id = ?"
+	stmt, err := r.db.PrepareContext(ctx, query)
+	if err != nil {
+		log.Printf("Error preparing statement for UnfollowUser: %v", err)
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, followerID, followedID)
+	if err != nil {
+		log.Printf("Error executing statement for UnfollowUser: %v", err)
+		return err
+	}
+	return nil
+}
 // CreateUser 將新使用者儲存到 MySQL 資料庫
 func (r *mysqlUserRepository) CreateUser(user *models.User) error {
 	ctx := context.Background()

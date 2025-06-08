@@ -40,20 +40,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("Fail to connect to DynamoDB: %v", err)
 	}
+	// Repositories
 	userRepo := repository.NewMySQLUserRepository(mysqlDB)
 	tokenBlacklistRepo := repository.NewMemoryTokenBlacklist()
 	postRepo := repository.NewDynamoDBPostRepository(awsdynamoDB)
+	// Services
 	authService := service.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWT.SecretKey, cfg.JWT.ExpiryMinutes)
 	profileService := service.NewProfileService(userRepo)
 	postService := service.NewPostService(postRepo, userRepo) 
+	userService := service.NewUserService(userRepo)
+
+	// Handlers
 	authHandler := handler.NewAuthHandler(*authService, cfg.JWT.ExpiryMinutes)
 	profileHandler := handler.NewProfileHandler(profileService)
 	postHandler := handler.NewPostHandler(postService)
+	userHandler := handler.NewUserHandler(userService, mysqlDB, awsdynamoDB) 
+
+	// Middleware
 	authMiddleware := middleware.NewAuthMiddleware(tokenBlacklistRepo, cfg.JWT.SecretKey)
 
 
 	// 6. 初始化 Router
-	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, profileHandler, postHandler, userRepo, authMiddleware) //
+	r := router.NewRouter(mysqlDB, awsdynamoDB, authHandler, profileHandler, postHandler, userHandler, userRepo, authMiddleware)
 
 
 	// 7. 啟動伺服器
