@@ -49,3 +49,5 @@ services:
 
 # # 停止所有服務
 # docker-compose down
+
+# sudo service docker start
