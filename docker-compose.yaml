@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  # 前端服務
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sns-frontend
+    restart: unless-stopped
+    env_file:  
+      - ./frontend/.env.local
+
+  # 後端服務
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sns-backend
+    restart: unless-stopped
+    # 如果後端需要連接資料庫，可以在這裡設定環境變數
+    # environment:
+    #   - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+
+  # Nginx 服務
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: sns-nginx-proxy
+    restart: unless-stopped
+    ports:
+      # 將主機的 80 port 映射到容器的 80 port
+      # 這是整個應用的唯一入口
+      - "80:80"
+    volumes:
+      # 掛載我們的 Nginx 設定檔
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      # 確保 Nginx 在前後端服務啟動後才啟動
+      - frontend
+      - backend
+
+# # 啟動所有服務
+# docker-compose up -d
+
+# # 查看所有服務的日誌
+# docker-compose logs -f
+
+# # 只看特定服務的日誌 (例如 backend)
+# docker-compose logs -f backend
+
+# # 停止所有服務
+# docker-compose down
