@@ -5,22 +5,25 @@ import (
 	"backend/internal/models"
 	"backend/internal/repository"
 	"context"
+	"errors"
 	"log"
 	"strconv"
-	"errors"
+	"time"
+	"fmt"
 )
 
-// PostService 結構體新增 userRepo
 type PostService struct {
 	postRepo repository.PostRepository
-	userRepo repository.UserRepository // <--- 新增 user repository
+	userRepo repository.UserRepository 
+	feedRepo repository.FeedRepository // <--- 新增 feed repository
 }
 
-// NewPostService 的建構子，現在需要傳入 userRepo
-func NewPostService(postRepo repository.PostRepository, userRepo repository.UserRepository) *PostService {
+
+func NewPostService(postRepo repository.PostRepository, userRepo repository.UserRepository, feedRepo repository.FeedRepository) *PostService {
 	return &PostService{
 		postRepo: postRepo,
-		userRepo: userRepo, // <--- 初始化 user repository
+		userRepo: userRepo,
+		feedRepo: feedRepo, // <--- 初始化 feed repository
 	}
 }
 
@@ -39,14 +42,62 @@ func (s *PostService) CreatePost(ctx context.Context, payload models.CreatePostP
 		return nil, err
 	}
 
+	go s.fanOutToFollowers(post)
+
 	// Fan-out logic would go here in a real application
 
 	return post, nil
 }
 
-// GetPostsByUserID 獲取某位作者的所有貼文，並轉換為前端需要的 DTO 格式
-func (s *PostService) GetPostsByUserID(ctx context.Context, userID string) ([]models.PostFeedDTO, error) {
-	// 1. 從 repository 獲取原始的貼文資料
+func (s *PostService) fanOutToFollowers(post *models.Post) {
+	// 建立一個新的 context，因為原始的 HTTP request context 可能在 fan-out 完成前就結束了
+	ctx := context.Background()
+
+	// 1. 獲取發文者的粉絲列表
+	authorIDUint, err := strconv.ParseUint(post.AuthorID, 10, 64)
+	if err != nil {
+		log.Printf("Fan-out failed: could not parse author ID '%s': %v", post.AuthorID, err)
+		return
+	}
+
+	followers, err := s.userRepo.GetFollowers(uint(authorIDUint))
+	if err != nil {
+	    log.Printf("Error getting followers for user %s: %v", post.AuthorID, err)
+	    return
+	}
+	
+	if len(followers) == 0 {
+		log.Printf("User %s has no followers to fan-out to.", post.AuthorID)
+		return
+	}
+	
+	// 設定 Feed 內容的存活時間 (TTL)，例如 90 天
+	ttl := time.Now().Add(90 * 24 * time.Hour).Unix()
+
+	var feedItems []models.UserFeedItem
+	for _, follower := range followers {
+		feedItem := models.UserFeedItem{
+			// 使用 "USER#" 前綴來建立標準的 PK
+			PK:           fmt.Sprintf("USER#%d", follower.ID), 
+			// 使用貼文的創建時間作為 SK，方便排序
+			SK:           post.CreatedAt,                   
+			PostID:       post.PostID,
+			AuthorID:     post.AuthorID,
+			TTLTimestamp: ttl,
+		}
+		feedItems = append(feedItems, feedItem)
+	}
+
+	// 3. 使用 BatchWriteItem 進行批量寫入以提高效率
+	if err := s.feedRepo.BatchAddToFeed(ctx, feedItems); err != nil {
+		log.Printf("Failed to execute batch add to feed for post %s: %v", post.PostID, err)
+	}
+
+	log.Printf("Fanning out post %s to %d followers.", post.PostID, len(followers))
+}
+
+func (s *PostService) GetPostsByUserID(ctx context.Context, userID string, viewerID string) ([]models.PostFeedDTO, error) {
+	// 1. 從 repository 獲取原始的貼文資料 (此處已按時間排序)
 	posts, err := s.postRepo.GetPostsByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("Error getting posts from repo for user ID %s: %v", userID, err)
@@ -57,31 +108,38 @@ func (s *PostService) GetPostsByUserID(ctx context.Context, userID string) ([]mo
 		return []models.PostFeedDTO{}, nil
 	}
 
-	// 2. 將 []models.Post 轉換為 []models.PostFeedDTO
+	// 2. 如果瀏覽者已登入，則檢查其按讚狀態
+	likedStatusMap := make(map[string]bool)
+	if viewerID != "" && len(posts) > 0 {
+		var postIDs []string
+		for _, post := range posts {
+			postIDs = append(postIDs, post.PostID)
+		}
+		// 調用已有的 repository 方法進行批量檢查
+		likedStatusMap, err = s.postRepo.CheckIfPostsLikedBy(ctx, postIDs, viewerID)
+		if err != nil {
+			log.Printf("Could not check liked status for viewer %s: %v", viewerID, err)
+			likedStatusMap = make(map[string]bool)
+		}
+	}
+
+	// 3. 將 []models.Post 轉換為 []models.PostFeedDTO
 	var feedDTOs []models.PostFeedDTO
 	for _, post := range posts {
+		// ... (省略獲取 authorName 的邏輯) ...
 		var authorName string
-		// 將 string 型別的 AuthorID 轉換為 uint，以便查詢使用者資料
-		authorIDUint, convErr := strconv.ParseUint(post.AuthorID, 10, 64)
-		if convErr != nil {
-			log.Printf("Error converting AuthorID string '%s' to uint for post '%s': %v. Using fallback name.", post.AuthorID, post.PostID, convErr)
-			authorName = "User ID: " + post.AuthorID // 若轉換失敗，提供一個備用名稱
+		authorIDUint, _ := strconv.ParseUint(post.AuthorID, 10, 64)
+		user, userErr := s.userRepo.GetUserByID(uint(authorIDUint))
+		if userErr != nil {
+			authorName = "User ID: " + post.AuthorID
 		} else {
-			// 透過 userRepo 查詢作者的使用者名稱
-			user, userErr := s.userRepo.GetUserByID(uint(authorIDUint))
-			if userErr != nil {
-				log.Printf("Error fetching user (ID: %d) for post '%s': %v. Using fallback name.", authorIDUint, post.PostID, userErr)
-				authorName = "User ID: " + post.AuthorID // 若查詢失敗，提供一個備用名稱
-			} else {
-				authorName = user.Username
-			}
+			authorName = user.Username
 		}
-
-		// 建立 DTO 物件
+		
 		dto := models.PostFeedDTO{
 			PostID:       post.PostID,
 			AuthorID:     post.AuthorID,
-			AuthorName:   authorName, // 填入查詢到的作者名稱
+			AuthorName:   authorName,
 			Content:      post.Content,
 			Media:        post.Media,
 			Tags:         post.Tags,
@@ -90,6 +148,7 @@ func (s *PostService) GetPostsByUserID(ctx context.Context, userID string) ([]mo
 			CommentCount: post.CommentCount,
 			CreatedAt:    post.CreatedAt,
 			UpdatedAt:    post.UpdatedAt,
+			IsLiked:      likedStatusMap[post.PostID],
 		}
 		feedDTOs = append(feedDTOs, dto)
 	}
@@ -135,7 +194,6 @@ func (s *PostService) DeletePost(ctx context.Context, payload models.DeletePostP
 	// 使用從查詢中得到的 AuthorID, PostID 和 CreatedAt 來刪除
 	return s.postRepo.DeletePost(ctx, post.AuthorID, post.PostID, post.CreatedAt)
 }
-
 
 func (s *PostService) LikePost(ctx context.Context, postID, userID string) error {
 	// 1. Fetch the post first to get its full details (including PK and SK)
@@ -216,7 +274,7 @@ func (s *PostService) DeleteComment(ctx context.Context, postID, commentSK, user
 		log.Printf("DeleteComment failed: could not find post with ID %s. Error: %v", postID, err)
 		return errors.New("post not found")
 	}
-	
+
 	// 3. 執行刪除
 	err = s.postRepo.DeleteComment(ctx, posts, commentSK)
 	if err != nil {
@@ -225,5 +283,5 @@ func (s *PostService) DeleteComment(ctx context.Context, postID, commentSK, user
 	}
 
 	return nil
-	
+
 }

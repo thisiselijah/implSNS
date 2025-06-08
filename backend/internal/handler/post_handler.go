@@ -9,9 +9,13 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/gin-gonic/gin"
+	"encoding/base64"
+	"encoding/json"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // PostHandler 結構
@@ -75,7 +79,8 @@ func (h *PostHandler) GetPostsByUserID(c *gin.Context) {
 		return
 	}
 
-	posts, err := h.postService.GetPostsByUserID(c.Request.Context(), userID)
+	viewerID, _ := getAuthenticatedUserID(c)
+	posts, err := h.postService.GetPostsByUserID(c.Request.Context(), userID, viewerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get posts"})
 		return
@@ -138,84 +143,121 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 }
 
 
-// GetFeedPosts 處理獲取使用者 Feed 的請求
-// ... (此函式主要為讀取操作，保持不變) ...
 func GetFeedPosts(dynamoDBClient *dynamodb.Client, userRepo repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.Param("userID") // 從 URL 路徑中獲取 userID
 
+		viewerID, ok := getAuthenticatedUserID(c)
+		if !ok {
+			// getAuthenticatedUserID 內部已處理錯誤回應
+			return
+		}
+		userID := c.Param("userID")
+		
 		if userID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "userID is required"})
 			return
 		}
-		postRepo := repository.NewDynamoDBPostRepository(dynamoDBClient)
-		feedItems, err := postRepo.GetFeedItemsByUserID(c.Request.Context(), "USER#"+userID)
-		if err != nil {
-			log.Printf("Error fetching feed items for userID %s: %v", userID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch feed items"})
-			return
-		}
-		if len(feedItems) == 0 {
-			c.JSON(http.StatusOK, []models.PostFeedDTO{})
-			return
-		}
-		var postIDs []string
-		for _, item := range feedItems {
-			if item.PostID != "" {
-				postIDs = append(postIDs, item.PostID)
+
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		exclusiveStartKey, _ := c.GetQuery("next_key")
+
+		var lastEvaluatedKey map[string]types.AttributeValue
+		if exclusiveStartKey != "" {
+			keyJSON, err := base64.StdEncoding.DecodeString(exclusiveStartKey)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid next_key format"})
+				return
 			}
+			json.Unmarshal(keyJSON, &lastEvaluatedKey)
 		}
-		if len(postIDs) == 0 {
-			log.Printf("No valid postIDs found in feed items for userID %s", userID)
-			c.JSON(http.StatusOK, []models.PostFeedDTO{})
+
+		feedRepo := repository.NewDynamoDBFeedRepository(dynamoDBClient)
+		postRepo := repository.NewDynamoDBPostRepository(dynamoDBClient)
+
+		// 1. 從 UserFeed 表獲取 PostID 列表
+		paginatedFeed, err := feedRepo.GetUserFeed(c.Request.Context(), userID, int32(limit), lastEvaluatedKey) //
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user feed"})
 			return
 		}
-		postsFromDB, err := postRepo.GetPostsByIDs(c.Request.Context(), postIDs)
+
+		if len(paginatedFeed.Items) == 0 {
+			c.JSON(http.StatusOK, gin.H{"data": []interface{}{}, "next_key": ""})
+			return
+		}
+
+		// 2. 提取 PostID 並批量獲取完整貼文內容
+		var postIDs []string
+		for _, item := range paginatedFeed.Items {
+			postIDs = append(postIDs, item.PostID) //
+		}
+
+		posts, err := postRepo.GetPostsByIDs(c.Request.Context(), postIDs)
 		if err != nil {
-			log.Printf("Error fetching full posts for userID %s, postIDs %v: %v", userID, postIDs, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch full posts for feed"})
 			return
 		}
-		var feedDTOs []models.PostFeedDTO
-		postMap := make(map[string]models.Post)
-		for _, p := range postsFromDB {
-			postMap[p.PostID] = p
+
+		likedStatusMap, err := postRepo.CheckIfPostsLikedBy(c.Request.Context(), postIDs, viewerID)
+		if err != nil {
+			// 即使檢查失敗，我們仍然回傳貼文列表，只是 isLiked 可能不準確
+			log.Printf("Could not check liked status for viewer %s: %v", viewerID, err)
+			likedStatusMap = make(map[string]bool) // 建立一個空的 map 以免下方出錯
 		}
-		for _, feedItem := range feedItems {
-			if post, ok := postMap[feedItem.PostID]; ok {
-				var authorName string
-				authorIDUint, convErr := strconv.ParseUint(post.AuthorID, 10, 64)
-				if convErr != nil {
-					log.Printf("Error converting AuthorID string '%s' to uint for post '%s': %v. Using original AuthorID as name.", post.AuthorID, post.PostID, convErr)
-					authorName = "AuthorID: " + post.AuthorID
+
+		// --- 3. 將 []models.Post 轉換為前端所需的 []models.FrontendFeedPost ---
+		authorCache := make(map[string]string) // 用於快取作者名稱，避免重複查詢
+		var frontendPosts []models.PostFeedDTO
+
+		for _, post := range posts {
+			authorName, found := authorCache[post.AuthorID]
+			if !found {
+				authorIDUint, _ := strconv.ParseUint(post.AuthorID, 10, 64)
+				user, userErr := userRepo.GetUserByID(uint(authorIDUint))
+				if userErr != nil {
+					log.Printf("Could not fetch author name for ID %s: %v", post.AuthorID, userErr)
+					authorName = "未知的使用者" // 設定備用名稱
 				} else {
-					user, userErr := userRepo.GetUserByID(uint(authorIDUint))
-					if userErr != nil {
-						log.Printf("Error fetching user (ID: %d) for post '%s': %v. Using original AuthorID as name.", authorIDUint, post.PostID, userErr)
-						authorName = "User: " + post.AuthorID
-					} else {
-						authorName = user.Username
-					}
+					authorName = user.Username
 				}
-				dto := models.PostFeedDTO{
-					PostID:       post.PostID,
-					AuthorID:     post.AuthorID,
-					AuthorName:   authorName,
-					Content:      post.Content,
-					Media:        post.Media,
-					Tags:         post.Tags,
-					Location:     post.Location,
-					LikeCount:    post.LikeCount,
-					CommentCount: post.CommentCount,
-					CreatedAt:    post.CreatedAt,
-					UpdatedAt:    post.UpdatedAt,
-				}
-				feedDTOs = append(feedDTOs, dto)
-			} else {
-				log.Printf("Post with ID %s found in feedItems but not in fetched postsMap for userID %s", feedItem.PostID, userID)
+				authorCache[post.AuthorID] = authorName
 			}
+
+			dto := models.PostFeedDTO{
+				PostID:       post.PostID,
+				AuthorID:     post.AuthorID,
+				AuthorName:   authorName,
+				Content:      post.Content,
+				Media:        post.Media,
+				Tags:         post.Tags,
+				Location:     post.Location,
+				LikeCount:    post.LikeCount,
+				CommentCount: post.CommentCount,
+				CreatedAt:    post.CreatedAt,
+				UpdatedAt:    post.UpdatedAt,
+				IsLiked:      likedStatusMap[post.PostID],
+			}
+			frontendPosts = append(frontendPosts, dto)
 		}
-		c.JSON(http.StatusOK, feedDTOs)
+		
+		// 4. (重要) 重新排序，以符合原始 Feed 的時間順序
+		postOrder := make(map[string]int)
+		for i, item := range paginatedFeed.Items {
+			postOrder[item.PostID] = i
+		}
+		sort.SliceStable(frontendPosts, func(i, j int) bool {
+			return postOrder[frontendPosts[i].PostID] < postOrder[frontendPosts[j].PostID]
+		})
+
+
+		// 5. 準備下一次分頁的 next_key
+		var nextKey string
+		if paginatedFeed.LastEvaluatedKey != nil {
+			keyJSON, _ := json.Marshal(paginatedFeed.LastEvaluatedKey)
+			nextKey = base64.StdEncoding.EncodeToString(keyJSON)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"data": frontendPosts, "next_key": nextKey})
 	}
 }
 

@@ -44,10 +44,11 @@ func main() {
 	userRepo := repository.NewMySQLUserRepository(mysqlDB)
 	tokenBlacklistRepo := repository.NewMemoryTokenBlacklist()
 	postRepo := repository.NewDynamoDBPostRepository(awsdynamoDB)
+	feedRepo := repository.NewDynamoDBFeedRepository(awsdynamoDB)
 	// Services
 	authService := service.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWT.SecretKey, cfg.JWT.ExpiryMinutes)
 	profileService := service.NewProfileService(userRepo)
-	postService := service.NewPostService(postRepo, userRepo) 
+	postService := service.NewPostService(postRepo, userRepo, feedRepo) 
 	userService := service.NewUserService(userRepo)
 
 	// Handlers

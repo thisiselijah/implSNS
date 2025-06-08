@@ -3,14 +3,14 @@
 package repository
 
 import (
+	"backend/internal/models" // 假設您有 models.FeedItem 和 models.Post 結構
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
-
-	"backend/internal/models" // 假設您有 models.FeedItem 和 models.Post 結構
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -34,6 +34,8 @@ type PostRepository interface {
 	CreateComment(ctx context.Context, post *models.Post, comment *models.Comment) error
 	DeleteComment(ctx context.Context, post *models.Post, commentSK string) error
 	GetCommentBySK(ctx context.Context, postID, commentSK string) (*models.Comment, error)
+	CheckIfPostsLikedBy(ctx context.Context, postIDs []string, userID string) (map[string]bool, error) // <--- 新增此方法
+
 }
 
 const FeedTableName = "Posts" // 假設您的表名
@@ -49,6 +51,69 @@ func NewDynamoDBPostRepository(client *dynamodb.Client) PostRepository {
 		client:    client,
 		tableName: FeedTableName, // 或者從配置讀取
 	}
+}
+
+func (r *DynamoDBPostRepository) CheckIfPostsLikedBy(ctx context.Context, postIDs []string, userID string) (map[string]bool, error) {
+	if len(postIDs) == 0 {
+		return make(map[string]bool), nil
+	}
+
+	// 初始化結果 map，預設所有貼文都未被按讚
+	likedStatus := make(map[string]bool, len(postIDs))
+	for _, id := range postIDs {
+		likedStatus[id] = false
+	}
+
+	// 根據按讚的資料模型 (PK: POST#{post_id}, SK: USER#{user_id}) 建立要查詢的索引鍵
+	keys := make([]map[string]types.AttributeValue, len(postIDs))
+	for i, postID := range postIDs {
+		keys[i] = map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "POST#" + postID},
+			"SK": &types.AttributeValueMemberS{Value: "USER#" + userID},
+		}
+	}
+
+	// BatchGetItem 每次最多查詢 100 個項目，如果超過則需分批
+	chunkSize := 100
+	for i := 0; i < len(keys); i += chunkSize {
+		end := i + chunkSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		chunk := keys[i:end]
+
+		input := &dynamodb.BatchGetItemInput{
+			RequestItems: map[string]types.KeysAndAttributes{
+				r.tableName: {
+					Keys: chunk,
+					// 我們只關心項目是否存在，不需回傳屬性，節省讀取成本
+					ProjectionExpression: aws.String("PK"),
+				},
+			},
+		}
+
+		result, err := r.client.BatchGetItem(ctx, input)
+		if err != nil {
+			log.Printf("BatchGetItem failed for checking likes: %v", err)
+			return nil, err
+		}
+
+		// 如果 BatchGetItem 找到了對應的項目，表示使用者按過讚
+		if responses, ok := result.Responses[r.tableName]; ok {
+			for _, itemMap := range responses {
+				var like struct {
+					PK string `dynamodbav:"PK"`
+				}
+				if err := attributevalue.UnmarshalMap(itemMap, &like); err == nil {
+					// 從 PK "POST#..." 中解析出 postID
+					postID := strings.TrimPrefix(like.PK, "POST#")
+					likedStatus[postID] = true
+				}
+			}
+		}
+	}
+
+	return likedStatus, nil
 }
 
 func (r *DynamoDBPostRepository) AddLike(ctx context.Context, post *models.Post, userID string) error {
