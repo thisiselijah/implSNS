@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 export default function CreatePost({ onClose, avatar_url }) {
   const avatarUrl = avatar_url || "/user.png"; // Default avatar if none provided
 
-  const [MarkdownOnClick, setMarkdownOnClick] = useState(false);
+  // const [MarkdownOnClick, setMarkdownOnClick] = useState(false);
   const [imagePreviews, setImagePreviews] = useState([]); // Array of {id: string, file: File, url: string}
   const [postText, setPostText] = useState(""); // State for textarea
 
@@ -23,29 +23,23 @@ export default function CreatePost({ onClose, avatar_url }) {
     };
   }, []); // Empty dependency array ensures this runs only on mount and unmount
 
-  const handleMarkdownClick = () => {
-    setMarkdownOnClick((prev) => !prev);
-  };
+  // const handleMarkdownClick = () => {
+  //   setMarkdownOnClick((prev) => !prev);
+  // };
 
   const handleUploadImage = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
-    input.multiple = true; // Allow multiple file selection
+    input.multiple = true;
     input.onchange = (event) => {
       const files = event.target.files;
       if (files && files.length > 0) {
         const newImageObjects = Array.from(files).map((file) => {
-          // Create a more unique ID, e.g., combining name and timestamp or a UUID
-          const id = `${file.name}-${Date.now()}-${Math.random()
-            .toString(36)
-            .substring(2, 9)}`;
+          const id = `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
           return { id, file, url: URL.createObjectURL(file) };
         });
-        setImagePreviews((prevPreviews) => [
-          ...prevPreviews,
-          ...newImageObjects,
-        ]);
+        setImagePreviews((prevPreviews) => [...prevPreviews, ...newImageObjects]);
       }
     };
     input.click();
@@ -54,62 +48,114 @@ export default function CreatePost({ onClose, avatar_url }) {
   const handleRemovePreviewImage = (idToRemove) => {
     const imageToRemove = imagePreviews.find((img) => img.id === idToRemove);
     if (imageToRemove) {
-      URL.revokeObjectURL(imageToRemove.url); // Revoke URL before removing from state
-      // console.log("Removed and revoked:", imageToRemove.url);
+      URL.revokeObjectURL(imageToRemove.url);
     }
-    setImagePreviews((prevPreviews) =>
-      prevPreviews.filter((img) => img.id !== idToRemove)
-    );
-  };
-  // Function to prepare image data (local URLs for now, files for future S3)
-  const getImageDataForUpload = async () => {
-    console.log("Preparing image data from previews:", imagePreviews);
-    // Simulate async process if needed, or just format data
-    return imagePreviews.map((p) => ({
-      fileName: p.file.name,
-      localPreviewUrl: p.url, // The client-side blob URL
-      file: p.file, // The actual File object for uploading
-      // In the future, this function would upload p.file to S3
-      // and return: s3Url: "actual_s3_url_here"
-    }));
+    setImagePreviews((prevPreviews) => prevPreviews.filter((img) => img.id !== idToRemove));
   };
 
-  const handleActualPost = async () => {
-    // 1. Get text content
-    console.log("Post text:", postText);
-
-    // 2. Prepare image data
-    let imageUploadResults = [];
-    if (imagePreviews.length > 0) {
-      imageUploadResults = await getImageDataForUpload();
-      console.log("Image data to be included in post:", imageUploadResults);
-      // In a real app, you would now upload imageUploadResults.map(item => item.file) to S3,
-      // get back the S3 URLs, and then save those URLs with the postText.
+  // NEW: Refactored handlePost function to implement the full upload flow
+  const handlePost = async () => {
+    if (!postText && imagePreviews.length === 0) {
+      alert("Please write something or add an image.");
+      return;
     }
 
-    // 3. Construct payload
-    const postPayload = {
-      text: postText,
-      // For now, we might just log the local info or filenames
-      // In future, this would be an array of S3 URLs or identifiers
-      images: imageUploadResults.map((img) => ({
-        fileName: img.fileName,
-        localUrl: img.localPreviewUrl,
-      })),
-    };
+    let uploadedImageKeys = [];
 
-    console.log("Submitting post payload:", postPayload);
-    // TODO: Implement actual submission logic here (e.g., API call)
+    try {
+      // --- STAGE 1: Get Presigned URLs from your Lambda API ---
+      if (imagePreviews.length > 0) {
+        console.log("Stage 1: Getting presigned URLs...");
+        const filesToUpload = imagePreviews.map(p => ({
+          fileName: p.file.name,
+          fileType: p.file.type,
+        }));
 
-    // 4. After successful post (simulation):
-    // alert("Post submitted (simulated)!");
-    // Clear inputs and previews
-    setPostText("");
-    // No need to manually revoke here if unmount will handle it,
-    // but if the component stays mounted and we want to clear, do it before setting empty array.
-    // imagePreviews.forEach(p => URL.revokeObjectURL(p.url)); // Already handled by unmount, or if items are removed
-    setImagePreviews([]); // Clear previews from UI
-    // onClose(); // Optionally close the modal/form
+        const presignedUrlResponse = await fetch(`${process.env.NEXT_PUBLIC_UPLOAD_IMAGES2S3_URL}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ files: filesToUpload }),
+        });
+
+        if (!presignedUrlResponse.ok) {
+          throw new Error(`Failed to get upload URLs. Status: ${presignedUrlResponse.status}`);
+        }
+        
+        const { uploadData } = await presignedUrlResponse.json();
+        console.log("Received upload data:", uploadData);
+
+        // --- STAGE 2: Upload files directly to S3 ---
+        console.log("Stage 2: Uploading files to S3...");
+        const uploadPromises = imagePreviews.map((preview, index) => {
+          const { presignedUrl } = uploadData[index];
+          return fetch(presignedUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': preview.file.type,
+            },
+            body: preview.file,
+          });
+        });
+
+        const uploadResults = await Promise.all(uploadPromises);
+        
+        if (uploadResults.some(res => !res.ok)) {
+            throw new Error('One or more files failed to upload to S3.');
+        }
+        
+        console.log("All files successfully uploaded to S3.");
+        uploadedImageKeys = uploadData.map(d => d.s3Key);
+      }
+
+      // --- STAGE 3: Create the post by calling your Go backend ---
+      console.log("Stage 3: Creating post in backend...");
+
+      const s3BucketName = process.env.NEXT_PUBLIC_AWS_S3_BUCKET_NAME;
+      const awsRegion = process.env.NEXT_PUBLIC_AWS_S3_REGION;
+
+      // 1. Transform S3 keys into full URLs and place them in the 'media' array.
+      const mediaPayload = uploadedImageKeys.map(key => ({
+        type: 'image',
+        url: `https://${s3BucketName}.s3.${awsRegion}.amazonaws.com/${key}`
+      }));
+      
+      // 2. Assemble the final payload with the correct field names: 'content', 'media', 'tags'.
+      const postPayload = {
+        author_id: "default-author-id", // Replace with actual author ID
+        content: postText,
+        media: mediaPayload,
+        tags: [], // Add tags if needed
+        location: null, // Add location if needed
+      };
+
+      console.log(`Submitting to Go backend`, postPayload);
+
+      const createPostResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(postPayload),
+        credentials: 'include', // Ensure cookies are sent
+      });
+
+      if (!createPostResponse.ok) {
+        throw new Error('Failed to create post in the backend.');
+      }
+      
+      // --- FINAL: Success and cleanup ---
+      alert("Post submitted successfully! (Simulated backend call)");
+      setPostText("");
+      setImagePreviews([]);
+      if (onClose) onClose();
+
+    } catch (error) {
+      console.error("An error occurred during the post creation process:", error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
   return (
@@ -155,6 +201,9 @@ export default function CreatePost({ onClose, avatar_url }) {
             placeholder="Got something to share today?"
             className="p-2 w-full text-gray-600 focus:outline-none focus:border-none rounded-md resize-none "
             rows={3}
+            value={postText}
+            onChange={(e) => setPostText(e.target.value)}
+
           />
 
           {/* Multiple Image Previews Section */}
@@ -362,7 +411,7 @@ export default function CreatePost({ onClose, avatar_url }) {
         </div>
       </div>
       <div className="flex flex-row items-center justify-end p-2 px-4">
-        <button className="p-1 px-4 bg-[#000000] hover:bg-gray-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150">
+        <button onClick={handlePost} className="p-1 px-4 bg-[#000000] hover:bg-gray-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150">
           Post
         </button>
       </div>

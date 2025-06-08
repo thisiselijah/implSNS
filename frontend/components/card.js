@@ -20,10 +20,11 @@ export function NavigationCard({
   );
 }
 
-export function PostCard({ post, authorProfile }) {
+export function PostCard({ key, post, authorProfile }) {
   // 支援 post prop 結構，也保留 fallback
+  const post_id = key;
+
   const {
-    id = "default-key",
     author_name = authorProfile?.username || "Default User",
     avatar_url = authorProfile?.avatar_url || null,
     content = "這是貼文的主要內容。Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
@@ -37,7 +38,7 @@ export function PostCard({ post, authorProfile }) {
 
   // 處理 media 圖片
   const imageSrcs = Array.isArray(media)
-    ? media.filter(m => m.Type === "Image" && m.URL).map(m => m.URL)
+    ? media.filter(m => m.Type === "image" && m.URL).map(m => m.URL)
     : [];
 
   const handleLike = () => {

@@ -68,7 +68,7 @@ export async function getServerSideProps(context) {
 
   // fetch user's posts
   const postsRes = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}${profileIdFromUrl}`,
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${profileIdFromUrl}`,
     { method: "GET"
       , headers: {
         cookie: `jwt_token=${jwtToken}`,
