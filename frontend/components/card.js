@@ -20,11 +20,9 @@ export function NavigationCard({
   );
 }
 
-export function PostCard({ key, post, authorProfile }) {
-  // 支援 post prop 結構，也保留 fallback
-  const post_id = key;
-
+export function PostCard({ post, authorProfile }) {
   const {
+    post_id = post?.post_id || key,
     author_name = authorProfile?.username || "Default User",
     avatar_url = authorProfile?.avatar_url || null,
     content = "這是貼文的主要內容。Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
@@ -35,16 +33,49 @@ export function PostCard({ key, post, authorProfile }) {
   } = post || {};
 
   const [likes, setLikes] = useState(like_count);
+  // isLiked
+  const [isLiked, setIsLiked] = useState(post.isLiked); // 可根據需求實作
 
   // 處理 media 圖片
   const imageSrcs = Array.isArray(media)
-    ? media.filter(m => m.Type === "image" && m.URL).map(m => m.URL)
+    ? media.filter((m) => m.Type === "image" && m.URL).map((m) => m.URL)
     : [];
 
-  const handleLike = () => {
-    setLikes(prevLikes =>
-      prevLikes === like_count ? prevLikes + 1 : like_count
-    );
+  const handleLikeOnClicked = async () => {
+    // POST like api
+    if (!isLiked) {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${post_id}/like`,
+        {
+          method: "PUT",
+          credentials: "include",
+        }
+      );
+      if (!res.ok) {
+        console.error("Failed to like the post");
+        return;
+      }
+      setLikes((prevLikes) =>
+        prevLikes === like_count ? prevLikes + 1 : like_count
+      );
+      setIsLiked(true); // 更新 isLiked 狀態
+    } else {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}/${post_id}/unlike`,
+        {
+          method: "PUT",
+          credentials: "include",
+        }
+      );
+      if (!res.ok) {
+        console.error("Failed to unlike the post");
+        return;
+      }
+      setLikes((prevLikes) =>
+        prevLikes === like_count ? prevLikes - 1 : like_count
+      );
+      setIsLiked(false); // 更新 isLiked 狀態
+    }
   };
 
   const handleComment = () => {
@@ -60,8 +91,16 @@ export function PostCard({ key, post, authorProfile }) {
           className="w-12 h-12 rounded-full mr-4 object-cover ring-1 ring-offset-1 ring-[#B6B09F]"
         />
         <div>
-          <h4 className="font-semibold text-gray-800">{author_name}</h4>
-          <p className="text-sm text-gray-500">發布於：{typeof created_at === "string" ? created_at : created_at?.toLocaleString?.() || ""}</p>
+          <Link href={`/profile/${post.author_id}`}>
+            <h4 className="font-semibold text-gray-800">{author_name}</h4>
+          </Link>
+
+          <p className="text-sm text-gray-500">
+            發布於：
+            {typeof created_at === "string"
+              ? created_at
+              : created_at?.toLocaleString?.() || ""}
+          </p>
         </div>
       </div>
       <div className="prose prose-indigo max-w-none p-2 mb-4">
@@ -85,17 +124,17 @@ export function PostCard({ key, post, authorProfile }) {
       <div className="mt-4 pt-4 border-t border-gray-200">
         <div className="flex items-center space-x-4">
           <button
-            onClick={handleLike}
+            onClick={handleLikeOnClicked}
             className="flex items-center text-gray-600 hover:text-[#B6B09F] focus:outline-none transition-colors duration-150"
             aria-label={`Like this post. Currently ${likes} likes.`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              fill={likes > like_count ? "currentColor" : "none"}
+              fill={isLiked ? "currentColor" : "none"}
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className={`size-6 mr-1.5 ${likes > like_count ? "text-red-500" : ""}`}
+              className={`size-6 mr-1.5 ${isLiked ? "text-red-500" : ""}`}
             >
               <path
                 strokeLinecap="round"

@@ -7,14 +7,8 @@ export default function Avatar(props) {
   const router = props.router;
   const username = props.username;
   const avatar_url = props.avatar_url;
-  const [user_id, serUser_id] = useState(null);
+  const user_id = props.user_id;
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const user_id = localStorage.getItem("user_id");
-      serUser_id(user_id);
-    }
-  }, []);
 
   return (
     <div className="bg-white p-4 rounded-lg shadow text-center space-y-4">

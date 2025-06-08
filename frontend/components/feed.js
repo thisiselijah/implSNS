@@ -61,7 +61,6 @@ export default function Feed({ feedData = [] }) {
         <div>
             {feedData.map((post) => (
                 <PostCard
-                    key={post.post_id || post.id}
                     post={{
                         ...post,
                         // 假設 post.created_at 為 ISO 字串

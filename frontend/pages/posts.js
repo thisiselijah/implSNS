@@ -70,7 +70,14 @@ export async function getServerSideProps(context) {
     if (!feedResponse.ok) {
       throw new Error(`無法載入動態 (Code: ${feedResponse.status})`);
     }
-    const initialFeedData = await feedResponse.json();
+    let feedData = await feedResponse.json();
+    feedData = feedData.data;
+
+    console.log("SSR: Initial feed data:", feedData);
+
+    // parse feedData
+    
+
 
     const profileResponse = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${userId}`,
@@ -93,7 +100,7 @@ export async function getServerSideProps(context) {
     return {
       props: {
         userId,
-        initialFeedData,
+        feedData,
         avatar_url: profileData.avatar_url || null,
         username: profileData.username || null,
         error: null,
@@ -104,7 +111,7 @@ export async function getServerSideProps(context) {
     return {
       props: {
         userId: null,
-        initialFeedData: null,
+        feedData: null,
         avatar_url: null,
         username: null,
         error: error.message || "伺服器發生錯誤，請稍後再試。",
@@ -115,7 +122,7 @@ export async function getServerSideProps(context) {
 
 export default function Posts({
   userId,
-  initialFeedData,
+  feedData,
   avatar_url,
   username,
   error,
@@ -154,9 +161,9 @@ export default function Posts({
   }
 
   // 初始載入狀態 (主要由 getServerSideProps 處理，客戶端載入是 useAuth 的狀態)
-  // 如果 initialFeedData 存在，表示 SSR 成功，理論上 isAuthenticated 也應為 true
+  // 如果 feedData 存在，表示 SSR 成功，理論上 isAuthenticated 也應為 true
   // 如果 authIsLoading 為 true，可能 useAuth 正在進行一些初始化檢查
-  if (authIsLoading && !initialFeedData) {
+  if (authIsLoading && !feedData) {
     return (
       <Layout pageTitle="載入中...">
         <PostsNavbar />
@@ -168,26 +175,26 @@ export default function Posts({
     );
   }
 
-  const feedData = (initialFeedData) => {
-    if (!initialFeedData || !Array.isArray(initialFeedData)) {
-      console.warn("SSR: Initial feed data is not an array or is null.");
-      return [];
-    }
-    return initialFeedData.map((item) => ({
-      post_id: item.post_id,
-      author_id: item.author_id,
-      author_name: item.author_name,
-      content: item.content,
-      media: Array.isArray(item.media) ? item.media : [],
-      tags: Array.isArray(item.tags) ? item.tags : [],
-      location: item.location || null,
-      like_count: typeof item.like_count === "number" ? item.like_count : 0,
-      comment_count:
-        typeof item.comment_count === "number" ? item.comment_count : 0,
-      created_at: item.created_at ? new Date(item.created_at) : null,
-      updated_at: item.updated_at ? new Date(item.updated_at) : null,
-    }));
-  };
+  // const feedData = (feedData) => {
+  //   if (!feedData || !Array.isArray(feedData)) {
+  //     console.warn("SSR: Initial feed data is not an array or is null.");
+  //     return [];
+  //   }
+  //   return feedData.map((item) => ({
+  //     post_id: item.post_id,
+  //     author_id: item.author_id,
+  //     author_name: item.author_name,
+  //     content: item.content,
+  //     media: Array.isArray(item.media) ? item.media : [],
+  //     tags: Array.isArray(item.tags) ? item.tags : [],
+  //     location: item.location || null,
+  //     like_count: typeof item.like_count === "number" ? item.like_count : 0,
+  //     comment_count:
+  //       typeof item.comment_count === "number" ? item.comment_count : 0,
+  //     created_at: item.created_at ? new Date(item.created_at) : null,
+  //     updated_at: item.updated_at ? new Date(item.updated_at) : null,
+  //   }));
+  // };
 
   // 主要內容渲染
   return (
@@ -220,7 +227,7 @@ export default function Posts({
                 Got something to share today?
               </button>
             </div>
-            <Feed feedData={feedData(initialFeedData)} />
+            <Feed feedData={feedData} />
           </div>
         </main>
         <aside className="hidden md:block md:col-span-4 lg:col-span-3">
@@ -228,6 +235,7 @@ export default function Posts({
             {/* Avatar 可能需要從 authContext 或 serverRenderedUserId 獲取用戶資訊 */}
             <Avatar
               router={router}
+              user_id={userId}
               avatar_url={avatar_url}
               username={username}
             />

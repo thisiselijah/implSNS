@@ -88,7 +88,9 @@ export async function getServerSideProps(context) {
     };
   }
 
-  // fetch user's followers and following counts
+  // fetch viewing user's followers and following counts
+  let followersCount = 0;
+  let followingCount = 0;
   try {
     const followersRes = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/followers`,
@@ -99,11 +101,10 @@ export async function getServerSideProps(context) {
         },
       }
     );
-    if (!followersRes.ok) {
-      throw new Error("Failed to fetch followers");
+    if (followersRes.ok) {
+      const followersData = await followersRes.json();
+      followersCount = followersData === null ? 0 : followersData.length;
     }
-    const followersData = await followersRes.json();
-    profileData.followersCount = followersData.length;
 
     const followingRes = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileIdFromUrl}/following`,
@@ -114,16 +115,14 @@ export async function getServerSideProps(context) {
         },
       }
     );
-    if (!followingRes.ok) {
-      throw new Error("Failed to fetch following");
+    if (followingRes.ok) {
+      const followingData = await followingRes.json();
+      followingCount = followingData === null ? 0 : followingData.length;
     }
-    const followingData = await followingRes.json();
-    profileData.followingCount = followingData === null ? 0 : followingData.length;
   } catch (error) {
     console.error("Error fetching followers or following:", error);
-    // 如果有錯誤，則設置默認值
-    profileData.followersCount = 0;
-    profileData.followingCount = 0;
+    followersCount = 0;
+    followingCount = 0;
   }
 
   // get current user's following status
@@ -142,7 +141,7 @@ export async function getServerSideProps(context) {
       if (followingRes.ok) {
         const followingData = await followingRes.json();
         isFollowing = followingData.some(
-          (user) => user.user_id === profileIdFromUrl
+          (user) => user.id === profileIdFromUrl
         );
       }
     } catch (error) {
@@ -163,6 +162,8 @@ export async function getServerSideProps(context) {
         bio: profileData.bio || "The user is too lazy to write a bio",
       },
       postsData: postsData || [],
+      followersCount,
+      followingCount,
       isFollowing: isFollowing,
     },
   };
@@ -173,6 +174,8 @@ export default function Profile({
   currentUserId,
   profileData,
   postsData,
+  followersCount,
+  followingCount,
   isFollowing,
 }) {
   const isOwnProfile = profileId === currentUserId && currentUserId !== null;
@@ -190,6 +193,10 @@ export default function Profile({
   const [displayUrl, setDisplayUrl] = useState(profileData.avatar_url);
   const [uploadingDots, setUploadingDots] = useState(0);
   const [isFollowed, setIsFollowed] = useState(isFollowing);
+  const currentfollowingCount = profileData.followingCount || 0;
+  const [currentFollowersCount, setCurrentFollowersCount] = useState(
+    profileData.followersCount || 0
+  );
 
   useEffect(() => {
     let interval;
@@ -216,6 +223,7 @@ export default function Profile({
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ bio }),
+            credentials: "include",
           }
         );
         if (!res.ok) {
@@ -306,6 +314,7 @@ export default function Profile({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ avatar_url: finalFileUrl }),
+          credentials: "include",
         }
       );
       if (!res.ok) {
@@ -329,36 +338,40 @@ export default function Profile({
 
   // follow/unfollow 按鈕的處理函式
   const handleFollowClick = async () => {
-  if (isOwnProfile) return;
-  try {
-    let res;
-    if (!isFollowed) {
-      // Follow
-      res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/follow`,
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
-      if (!res.ok) throw new Error("Follow 操作失敗，請稍後再試");
-      setIsFollowed((prev) => !prev);
-    } else {
-      // Unfollow
-      res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/unfollow`,
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
-      if (!res.ok) throw new Error("Unfollow 操作失敗，請稍後再試");
-      setIsFollowed((prev) => !prev);
+    if (isOwnProfile) return;
+    try {
+      let res;
+      if (!isFollowed) {
+        // Follow
+        res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/follow`,
+          {
+            method: "POST",
+            credentials: "include",
+          }
+        );
+        if (!res.ok) throw new Error("Follow 操作失敗，請稍後再試");
+        setIsFollowed((prev) => !prev);
+        // update followers count
+        setCurrentFollowersCount((prev) => prev + 1);
+      } else {
+        // Unfollow
+        res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_USERS_API}${profileId}/unfollow`,
+          {
+            method: "POST",
+            credentials: "include",
+          }
+        );
+        if (!res.ok) throw new Error("Unfollow 操作失敗，請稍後再試");
+        setIsFollowed((prev) => !prev);
+        // update followers count
+        setCurrentFollowersCount((prev) => Math.max(prev - 1, 0)); // 確保不會小於 0
+      }
+    } catch (error) {
+      alert(`${isFollowed ? "Unfollow" : "Follow"} 操作失敗：${error.message}`);
     }
-  } catch (error) {
-    alert(`${isFollowed ? "Unfollow" : "Follow"} 操作失敗：${error.message}`);
-  }
-};
+  };
 
   return (
     <Layout pageTitle={isOwnProfile ? "Profile" : `Profile-${profileId}`}>
@@ -407,8 +420,8 @@ export default function Profile({
                   </div>
                 </div>
                 <div className="text-sm flex flex-row flex-1 gap-2 text-gray-600 justify-evenly">
-                  <p>Follwers: 0</p>
-                  <p>Follwing: 0</p>
+                  <p>Follwers: {followersCount}</p>
+                  <p>Follwing: {followingCount}</p>
                 </div>
                 {!isOwnProfile && (
                   <button
