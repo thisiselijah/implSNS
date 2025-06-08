@@ -5,7 +5,7 @@ export async function logout(authContext, router) {
 
     try {
         const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_BASE_URL}${NEXT_PUBLIC_LOGOUT_API}`, {
+            `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_LOGOUT_API}`, {
             method: 'POST',
             credentials: 'include', // 讓瀏覽器帶上 cookie
         });
