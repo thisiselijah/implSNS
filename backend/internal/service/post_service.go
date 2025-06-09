@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"strconv"
 	"time"
 	"fmt"
 )
@@ -49,111 +48,102 @@ func (s *PostService) CreatePost(ctx context.Context, payload models.CreatePostP
 	return post, nil
 }
 
+
 func (s *PostService) fanOutToFollowers(post *models.Post) {
-	// 建立一個新的 context，因為原始的 HTTP request context 可能在 fan-out 完成前就結束了
-	ctx := context.Background()
+    // 建立一個新的 context，因為原始的 HTTP request context 可能在 fan-out 完成前就結束了
+    ctx := context.Background()
 
-	// 1. 獲取發文者的粉絲列表
-	authorIDUint, err := strconv.ParseUint(post.AuthorID, 10, 64)
-	if err != nil {
-		log.Printf("Fan-out failed: could not parse author ID '%s': %v", post.AuthorID, err)
-		return
-	}
+    // 1. 獲取發文者的粉絲列表
+    followers, err := s.userRepo.GetFollowers(post.AuthorID)
+    if err != nil {
+        log.Printf("Error getting followers for user %s: %v", post.AuthorID, err)
+        return
+    }
+    
+    if len(followers) == 0 {
+        log.Printf("User %s has no followers to fan-out to.", post.AuthorID)
+        return
+    }
+    
+    // 設定 Feed 內容的存活時間 (TTL)，例如 90 天
+    ttl := time.Now().Add(90 * 24 * time.Hour).Unix()
 
-	followers, err := s.userRepo.GetFollowers(uint(authorIDUint))
-	if err != nil {
-	    log.Printf("Error getting followers for user %s: %v", post.AuthorID, err)
-	    return
-	}
-	
-	if len(followers) == 0 {
-		log.Printf("User %s has no followers to fan-out to.", post.AuthorID)
-		return
-	}
-	
-	// 設定 Feed 內容的存活時間 (TTL)，例如 90 天
-	ttl := time.Now().Add(90 * 24 * time.Hour).Unix()
+    var feedItems []models.UserFeedItem
+    for _, follower := range followers {
+        feedItem := models.UserFeedItem{
+            PK:           fmt.Sprintf("USER#%s", follower.ID), // follower.ID 已為 string
+            SK:           post.CreatedAt,
+            PostID:       post.PostID,
+            AuthorID:     post.AuthorID,
+            TTLTimestamp: ttl,
+        }
+        feedItems = append(feedItems, feedItem)
+    }
 
-	var feedItems []models.UserFeedItem
-	for _, follower := range followers {
-		feedItem := models.UserFeedItem{
-			// 使用 "USER#" 前綴來建立標準的 PK
-			PK:           fmt.Sprintf("USER#%d", follower.ID), 
-			// 使用貼文的創建時間作為 SK，方便排序
-			SK:           post.CreatedAt,                   
-			PostID:       post.PostID,
-			AuthorID:     post.AuthorID,
-			TTLTimestamp: ttl,
-		}
-		feedItems = append(feedItems, feedItem)
-	}
+    // 3. 使用 BatchWriteItem 進行批量寫入以提高效率
+    if err := s.feedRepo.BatchAddToFeed(ctx, feedItems); err != nil {
+        log.Printf("Failed to execute batch add to feed for post %s: %v", post.PostID, err)
+    }
 
-	// 3. 使用 BatchWriteItem 進行批量寫入以提高效率
-	if err := s.feedRepo.BatchAddToFeed(ctx, feedItems); err != nil {
-		log.Printf("Failed to execute batch add to feed for post %s: %v", post.PostID, err)
-	}
-
-	log.Printf("Fanning out post %s to %d followers.", post.PostID, len(followers))
+    log.Printf("Fanning out post %s to %d followers.", post.PostID, len(followers))
 }
 
 func (s *PostService) GetPostsByUserID(ctx context.Context, userID string, viewerID string) ([]models.PostFeedDTO, error) {
-	// 1. 從 repository 獲取原始的貼文資料 (此處已按時間排序)
-	posts, err := s.postRepo.GetPostsByUserID(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting posts from repo for user ID %s: %v", userID, err)
-		return nil, err
-	}
+    // 1. 從 repository 獲取原始的貼文資料 (此處已按時間排序)
+    posts, err := s.postRepo.GetPostsByUserID(ctx, userID)
+    if err != nil {
+        log.Printf("Error getting posts from repo for user ID %s: %v", userID, err)
+        return nil, err
+    }
 
-	if len(posts) == 0 {
-		return []models.PostFeedDTO{}, nil
-	}
+    if len(posts) == 0 {
+        return []models.PostFeedDTO{}, nil
+    }
 
-	// 2. 如果瀏覽者已登入，則檢查其按讚狀態
-	likedStatusMap := make(map[string]bool)
-	if viewerID != "" && len(posts) > 0 {
-		var postIDs []string
-		for _, post := range posts {
-			postIDs = append(postIDs, post.PostID)
-		}
-		// 調用已有的 repository 方法進行批量檢查
-		likedStatusMap, err = s.postRepo.CheckIfPostsLikedBy(ctx, postIDs, viewerID)
-		if err != nil {
-			log.Printf("Could not check liked status for viewer %s: %v", viewerID, err)
-			likedStatusMap = make(map[string]bool)
-		}
-	}
+    // 2. 如果瀏覽者已登入，則檢查其按讚狀態
+    likedStatusMap := make(map[string]bool)
+    if viewerID != "" && len(posts) > 0 {
+        var postIDs []string
+        for _, post := range posts {
+            postIDs = append(postIDs, post.PostID)
+        }
+        // 調用已有的 repository 方法進行批量檢查
+        likedStatusMap, err = s.postRepo.CheckIfPostsLikedBy(ctx, postIDs, viewerID)
+        if err != nil {
+            log.Printf("Could not check liked status for viewer %s: %v", viewerID, err)
+            likedStatusMap = make(map[string]bool)
+        }
+    }
 
-	// 3. 將 []models.Post 轉換為 []models.PostFeedDTO
-	var feedDTOs []models.PostFeedDTO
-	for _, post := range posts {
-		// ... (省略獲取 authorName 的邏輯) ...
-		var authorName string
-		authorIDUint, _ := strconv.ParseUint(post.AuthorID, 10, 64)
-		user, userErr := s.userRepo.GetUserByID(uint(authorIDUint))
-		if userErr != nil {
-			authorName = "User ID: " + post.AuthorID
-		} else {
-			authorName = user.Username
-		}
-		
-		dto := models.PostFeedDTO{
-			PostID:       post.PostID,
-			AuthorID:     post.AuthorID,
-			AuthorName:   authorName,
-			Content:      post.Content,
-			Media:        post.Media,
-			Tags:         post.Tags,
-			Location:     post.Location,
-			LikeCount:    post.LikeCount,
-			CommentCount: post.CommentCount,
-			CreatedAt:    post.CreatedAt,
-			UpdatedAt:    post.UpdatedAt,
-			IsLiked:      likedStatusMap[post.PostID],
-		}
-		feedDTOs = append(feedDTOs, dto)
-	}
+    // 3. 將 []models.Post 轉換為 []models.PostFeedDTO
+    var feedDTOs []models.PostFeedDTO
+    for _, post := range posts {
+        var authorName string
+        user, userErr := s.userRepo.GetUserByID(post.AuthorID)
+        if userErr != nil {
+            authorName = "User ID: " + post.AuthorID
+        } else {
+            authorName = user.Username
+        }
+        
+        dto := models.PostFeedDTO{
+            PostID:       post.PostID,
+            AuthorID:     post.AuthorID,
+            AuthorName:   authorName,
+            Content:      post.Content,
+            Media:        post.Media,
+            Tags:         post.Tags,
+            Location:     post.Location,
+            LikeCount:    post.LikeCount,
+            CommentCount: post.CommentCount,
+            CreatedAt:    post.CreatedAt,
+            UpdatedAt:    post.UpdatedAt,
+            IsLiked:      likedStatusMap[post.PostID],
+        }
+        feedDTOs = append(feedDTOs, dto)
+    }
 
-	return feedDTOs, nil
+    return feedDTOs, nil
 }
 
 // UpdatePost 處理更新貼文的邏輯
@@ -229,59 +219,28 @@ func (s *PostService) UnlikePost(ctx context.Context, postID, userID string) err
 
 // CreateComment 處理新增評論的邏輯
 func (s *PostService) CreateComment(ctx context.Context, payload models.CreateCommentPayload) (*models.Comment, error) {
-	// 透過 userRepo 查詢作者的使用者名稱
-	authorIDUint, _ := strconv.ParseUint(payload.AuthorID, 10, 64)
-	user, userErr := s.userRepo.GetUserByID(uint(authorIDUint))
-	if userErr != nil {
-		return nil, errors.New("author not found")
-	}
+    // 直接用 string 型別的 AuthorID
+    user, userErr := s.userRepo.GetUserByID(payload.AuthorID)
+    if userErr != nil {
+        return nil, errors.New("author not found")
+    }
 
-	comment := &models.Comment{
-		PostID:     payload.PostID,
-		AuthorID:   payload.AuthorID,
-		AuthorName: user.Username, // 填入使用者名稱
-		Content:    payload.Content,
-	}
+    comment := &models.Comment{
+        PostID:     payload.PostID,
+        AuthorID:   payload.AuthorID,
+        AuthorName: user.Username, // 填入使用者名稱
+        Content:    payload.Content,
+    }
 
-	posts, err := s.postRepo.GetPostByID(ctx, payload.PostID)
-	if err != nil {
-		log.Printf("CreateComment failed: could not find post with ID %s. Error: %v", payload.PostID, err)
-		return nil, errors.New("post not found")
-	}
+    posts, err := s.postRepo.GetPostByID(ctx, payload.PostID)
+    if err != nil {
+        log.Printf("CreateComment failed: could not find post with ID %s. Error: %v", payload.PostID, err)
+        return nil, errors.New("post not found")
+    }
 
-	if err := s.postRepo.CreateComment(ctx, posts, comment); err != nil {
-		log.Printf("Error creating comment in service: %v", err)
-		return nil, err
-	}
-	return comment, nil
-}
-
-// DeleteComment 處理刪除評論的邏輯
-func (s *PostService) DeleteComment(ctx context.Context, postID, commentSK, userID string) error {
-	// 1. 獲取評論，以進行授權檢查
-	comment, err := s.postRepo.GetCommentBySK(ctx, postID, commentSK)
-	if err != nil {
-		return err
-	}
-
-	// 2. 授權檢查：只有評論者本人可以刪除
-	if comment.AuthorID != userID {
-		return errors.New("user not authorized to delete this comment")
-	}
-
-	posts, err := s.postRepo.GetPostByID(ctx, postID)
-	if err != nil {
-		log.Printf("DeleteComment failed: could not find post with ID %s. Error: %v", postID, err)
-		return errors.New("post not found")
-	}
-
-	// 3. 執行刪除
-	err = s.postRepo.DeleteComment(ctx, posts, commentSK)
-	if err != nil {
-		log.Printf("Error deleting comment in service: %v", err)
-		return err
-	}
-
-	return nil
-
+    if err := s.postRepo.CreateComment(ctx, posts, comment); err != nil {
+        log.Printf("Error creating comment in service: %v", err)
+        return nil, err
+    }
+    return comment, nil
 }

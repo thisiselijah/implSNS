@@ -27,6 +27,7 @@ type PostRepository interface {
 	UpdatePost(ctx context.Context, post *models.Post) error
 	DeletePost(ctx context.Context, authorID, postID, createdAt string) error
 	GetPostByID(ctx context.Context, postID string) (*models.Post, error)
+	GetRecentPosts(ctx context.Context, lookbackDays int) ([]models.Post, error)
 
 	// --- FIX: Signatures changed to accept *models.Post ---
 	AddLike(ctx context.Context, post *models.Post, userID string) error
@@ -51,6 +52,34 @@ func NewDynamoDBPostRepository(client *dynamodb.Client) PostRepository {
 		client:    client,
 		tableName: FeedTableName, // 或者從配置讀取
 	}
+}
+
+func (r *DynamoDBPostRepository) GetRecentPosts(ctx context.Context, lookbackDays int) ([]models.Post, error) {
+	cutOffDate := time.Now().UTC().AddDate(0, 0, -lookbackDays).Format(time.RFC3339)
+
+	// 使用 Scan 操作篩選近期貼文。這在大型表上效率低下。
+	// 生產環境應建立 GSI (例如 PK: EntityType, SK: CreatedAt) 來高效查詢。
+	input := &dynamodb.ScanInput{
+		TableName:        aws.String(r.tableName),
+		FilterExpression: aws.String("entity_type = :type AND created_at >= :date"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":type": &types.AttributeValueMemberS{Value: "POST"},
+			":date": &types.AttributeValueMemberS{Value: cutOffDate},
+		},
+	}
+
+	result, err := r.client.Scan(ctx, input)
+	if err != nil {
+		log.Printf("Failed to scan for recent posts: %v", err)
+		return nil, err
+	}
+
+	var posts []models.Post
+	if err := attributevalue.UnmarshalListOfMaps(result.Items, &posts); err != nil {
+		log.Printf("Failed to unmarshal recent posts: %v", err)
+		return nil, err
+	}
+	return posts, nil
 }
 
 func (r *DynamoDBPostRepository) CheckIfPostsLikedBy(ctx context.Context, postIDs []string, userID string) (map[string]bool, error) {
