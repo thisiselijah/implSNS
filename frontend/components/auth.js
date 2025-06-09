@@ -1,14 +1,39 @@
-// auth.js
-import { useAuth } from "@/contexts/AuthContext"; // 引入 useAuth hook
+import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Auth({ onClose }) {
-  // 不再需要 onLoginSuccess
-  const { login } = useAuth(); // 從 context 取得 login 方法
+  const { login } = useAuth();
+
+  // 新增狀態
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const handleFormSubmit = async (event) => {
     event.preventDefault();
+    const email = event.target.email.value.trim();
+    const password = event.target.password.value;
 
-    console.log("Form submitted in Auth component");
+    let valid = true;
+
+    // Email 格式驗證
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setEmailError("請輸入正確的 Email 格式");
+      valid = false;
+    } else {
+      setEmailError("");
+    }
+
+    // Password 格式驗證（至少 6 碼）
+    if (password.length < 6) {
+      setPasswordError("密碼長度至少需 6 碼");
+      valid = false;
+    } else {
+      setPasswordError("");
+    }
+
+    if (!valid) return;
+
     try {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_LOGIN_API}`,
@@ -17,35 +42,23 @@ export default function Auth({ onClose }) {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            email: event.target.email.value,
-            password: event.target.password.value,
-          }),
-          credentials: "include", // 重要！確保瀏覽器接收 Set-Cookie header
+          body: JSON.stringify({ email, password }),
+          credentials: "include",
         }
       );
 
       if (!response.ok) {
-        // 錯誤處理邏輯保持不變
         const errData = await response.json();
         throw new Error(errData.error || "Login failed.");
       }
 
-      // 登入成功，後端已設置 cookie
       const userData = await response.json();
-      console.log("Login successful, user data:", userData);
-
       login(userData);
 
-      if (onClose) {
-        onClose();
-      }
+      if (onClose) onClose();
     } catch (error) {
-      console.error("There was a problem with the login request:", error);
-      alert(
-        error.message ||
-          "Login failed. Please check your credentials and try again."
-      );
+      // 這裡可根據錯誤訊息顯示在密碼欄下方
+      setPasswordError(error.message || "Login failed. Please check your credentials and try again.");
     }
   };
 
@@ -62,31 +75,15 @@ export default function Auth({ onClose }) {
             className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
             aria-label="Close"
           >
-            <svg
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         )}
       </div>
-      <div className="sm:mx-auto sm:w-full sm:max-w-sm mb-6">
-        <></>
-      </div>
       <form onSubmit={handleFormSubmit} className="space-y-6">
         <div>
-          <label
-            htmlFor="email"
-            className="block text-sm font-medium leading-6 text-gray-900"
-          >
+          <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900">
             Email address
           </label>
           <div className="mt-2">
@@ -98,21 +95,18 @@ export default function Auth({ onClose }) {
               autoComplete="email"
               className="block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
             />
+            {emailError && (
+              <p className="mt-1 text-xs text-red-500">{emailError}</p>
+            )}
           </div>
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium leading-6 text-gray-900"
-            >
+            <label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900">
               Password
             </label>
             <div className="text-sm">
-              <a
-                href="#"
-                className="font-semibold text-balck hover:text-[#B6B09F]"
-              >
+              <a href="#" className="font-semibold text-balck hover:text-[#B6B09F]">
                 Forgot password?
               </a>
             </div>
@@ -126,6 +120,9 @@ export default function Auth({ onClose }) {
               autoComplete="current-password"
               className="block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
             />
+            {passwordError && (
+              <p className="mt-1 text-xs text-red-500">{passwordError}</p>
+            )}
           </div>
         </div>
         <div>

@@ -162,6 +162,7 @@ export async function getServerSideProps(context) {
         username: profileData.username || "",
         avatar_url: profileData.avatar_url || null,
         bio: profileData.bio || "The user is too lazy to write a bio",
+        created_at: profileData.created_at || "",
       },
       postsData: postsData || [],
       followersCount,
@@ -417,7 +418,13 @@ export default function Profile({
                   <div className="flex items-center gap-2 text-gray-600">
                     <span className="text-sm text-gray-600">#{profileId}</span>
                     <span className="text-sm text-gray-600">
-                      Joined on 2023-10-01
+                       {profileData.created_at
+                        ? new Date(profileData.created_at).toLocaleDateString("zh-TW", {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                          })
+                        : ""}
                     </span>
                   </div>
                 </div>
