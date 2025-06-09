@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fmt" // 用於格式化 user ID 為字串
+
 	"net/http"
 	"strings"
 	"backend/internal/models"
@@ -61,7 +61,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// --- 設定 HTTP-only cookie ---
-	cookieValue := fmt.Sprintf("%d", loginResponse.UserID)
+	cookieValue := loginResponse.UserID // 假設 UserID 是字串類型
 	maxAgeSeconds := h.jwtTokenExpiryMinutes * 60
 
 	secureCookie := false

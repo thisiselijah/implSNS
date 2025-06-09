@@ -244,3 +244,33 @@ func (s *PostService) CreateComment(ctx context.Context, payload models.CreateCo
     }
     return comment, nil
 }
+
+// DeleteComment 處理刪除評論的邏輯
+func (s *PostService) DeleteComment(ctx context.Context, postID, commentSK, userID string) error {
+	// 1. 獲取評論，以進行授權檢查
+	comment, err := s.postRepo.GetCommentBySK(ctx, postID, commentSK)
+	if err != nil {
+		return err
+	}
+
+	// 2. 授權檢查：只有評論者本人可以刪除
+	if comment.AuthorID != userID {
+		return errors.New("user not authorized to delete this comment")
+	}
+
+	posts, err := s.postRepo.GetPostByID(ctx, postID)
+	if err != nil {
+		log.Printf("DeleteComment failed: could not find post with ID %s. Error: %v", postID, err)
+		return errors.New("post not found")
+	}
+
+	// 3. 執行刪除
+	err = s.postRepo.DeleteComment(ctx, posts, commentSK)
+	if err != nil {
+		log.Printf("Error deleting comment in service: %v", err)
+		return err
+	}
+
+	return nil
+
+}

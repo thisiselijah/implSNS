@@ -4,7 +4,6 @@ import (
 	"errors" // 用於建立自訂錯誤
 	"log"    // 簡單日誌記錄
 	"time"   // 用於 JWT 的過期時間
-	"strconv"
 	"backend/internal/models"
 	"backend/internal/repository"
 	"golang.org/x/crypto/bcrypt"
@@ -107,7 +106,7 @@ func (s *AuthService) Login(loginData models.UserForLogin) (*models.LoginRespons
 
 	expirationTime := time.Now().Add(s.jwtTokenExpiry)
 	claims := &jwt.RegisteredClaims{
-		Subject:   strconv.FormatUint(uint64(user.ID), 10),
+		Subject:   user.ID,
 		ExpiresAt: jwt.NewNumericDate(expirationTime),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		Issuer:    "my-app", // 應用程式名稱

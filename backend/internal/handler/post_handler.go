@@ -5,15 +5,12 @@ import (
 	"backend/internal/models"
 	"backend/internal/repository"
 	"backend/internal/service"
-	// "fmt"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
-
 	"encoding/base64"
 	"encoding/json"
-	// "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +19,7 @@ const (
 	FeedThreshold         = 10 // 如果 Feed 項目少於此數，則補充推薦
 	FeedTotalTarget       = 20 // Feed 項目總數的目標
 	RecommendationLookout = 50 // 從多少個推薦項目中進行篩選
+	TrendingAlgorithmKey  = "trending-v1.0" // 與推薦生成器中使用的金鑰保持一致
 )
 
 type PostHandler struct {
@@ -29,7 +27,7 @@ type PostHandler struct {
 	userRepo    repository.UserRepository
 	feedRepo    repository.FeedRepository
 	postRepo    repository.PostRepository
-	recoRepo    repository.RecommendationRepository // <-- 新增依賴
+	recoRepo    repository.RecommendationRepository
 }
 
 func NewPostHandler(
@@ -37,17 +35,18 @@ func NewPostHandler(
 	userRepo repository.UserRepository,
 	feedRepo repository.FeedRepository,
 	postRepo repository.PostRepository,
-	recoRepo repository.RecommendationRepository, // <-- 新增參數
+	recoRepo repository.RecommendationRepository,
 ) *PostHandler {
 	return &PostHandler{
 		postService: postService,
 		userRepo:    userRepo,
 		feedRepo:    feedRepo,
 		postRepo:    postRepo,
-		recoRepo:    recoRepo, // <-- 初始化
+		recoRepo:    recoRepo,
 	}
 }
 
+// ... 其他處理函式 (CreatePost, GetPostsByUserID 等) 保持不變 ...
 // getAuthenticatedUserID 是一個輔助函式，從 Gin context 中獲取並驗證使用者 ID
 func getAuthenticatedUserID(c *gin.Context) (string, bool) {
 	userID, exists := c.Get("userID")
@@ -161,14 +160,11 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 }
 
 func (h *PostHandler) GetFeedPosts(c *gin.Context) {
-
 	viewerID, ok := getAuthenticatedUserID(c)
 	if !ok {
-		// getAuthenticatedUserID 內部已處理錯誤回應
 		return
 	}
 	userID := c.Param("userID")
-
 	if userID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "userID is required"})
 		return
@@ -187,9 +183,6 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 		json.Unmarshal(keyJSON, &lastEvaluatedKey)
 	}
 
-	// feedRepo := repository.NewDynamoDBFeedRepository(dynamoDBClient)
-	// postRepo := repository.NewDynamoDBPostRepository(dynamoDBClient)
-
 	// 1. 從 UserFeed 表獲取基於追蹤的 Feed
 	paginatedFeed, err := h.feedRepo.GetUserFeed(c.Request.Context(), userID, int32(limit), lastEvaluatedKey)
 	if err != nil {
@@ -197,9 +190,8 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 		return
 	}
 
-	// 提取 PostID
 	var postIDs []string
-	seenPostIDs := make(map[string]bool) // 用於過濾重複
+	seenPostIDs := make(map[string]bool)
 	for _, item := range paginatedFeed.Items {
 		postIDs = append(postIDs, item.PostID)
 		seenPostIDs[item.PostID] = true
@@ -208,15 +200,13 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 	// --- 2. 檢查 Feed 是否過少，若是，則補充推薦內容 ---
 	if len(postIDs) < FeedThreshold {
 		needed := int32(FeedTotalTarget - len(postIDs))
-		log.Printf("Feed for user %s is sparse (%d items). Fetching %d recommendations.", userID, len(postIDs), needed)
+		log.Printf("Feed for user %s is sparse (%d items). Fetching up to %d recommendations.", userID, len(postIDs), needed)
 
-		// 從推薦系統獲取推薦 (多拿一些以防有重複)
-		recommendations, err := h.recoRepo.GetRecommendations(c.Request.Context(), userID, RecommendationLookout)
+		// *** 重構核心變更：呼叫 GetGlobalTrending ***
+		recommendations, err := h.recoRepo.GetGlobalTrending(c.Request.Context(), TrendingAlgorithmKey, RecommendationLookout)
 		if err != nil {
-			log.Printf("Could not fetch recommendations for user %s: %v", userID, err)
-			// 不中斷流程，回傳已有的 feed
+			log.Printf("Could not fetch global recommendations: %v", err)
 		} else {
-			// 將不重複的推薦 PostID 加入列表
 			for _, rec := range recommendations {
 				if _, seen := seenPostIDs[rec.PostID]; !seen {
 					postIDs = append(postIDs, rec.PostID)
@@ -242,25 +232,20 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 	}
 
 	likedStatusMap, err := h.postRepo.CheckIfPostsLikedBy(c.Request.Context(), postIDs, viewerID)
-
 	if err != nil {
-		// 即使檢查失敗，我們仍然回傳貼文列表，只是 isLiked 可能不準確
 		log.Printf("Could not check liked status for viewer %s: %v", viewerID, err)
-		likedStatusMap = make(map[string]bool) // 建立一個空的 map 以免下方出錯
+		likedStatusMap = make(map[string]bool)
 	}
 
-	// --- 3. 將 []models.Post 轉換為前端所需的 []models.FrontendFeedPost ---
-	authorCache := make(map[string]string) // 用於快取作者名稱，避免重複查詢
+	authorCache := make(map[string]string)
 	var frontendPosts []models.PostFeedDTO
-
 	for _, post := range posts {
 		authorName, found := authorCache[post.AuthorID]
 		if !found {
-			authorIDUint, _ := strconv.ParseUint(post.AuthorID, 10, 64)
-			user, userErr := h.userRepo.GetUserByID(uint(authorIDUint))
+			user, userErr := h.userRepo.GetUserByID(post.AuthorID)
 			if userErr != nil {
 				log.Printf("Could not fetch author name for ID %s: %v", post.AuthorID, userErr)
-				authorName = "未知的使用者" // 設定備用名稱
+				authorName = "未知的使用者"
 			} else {
 				authorName = user.Username
 			}
@@ -284,7 +269,7 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 		frontendPosts = append(frontendPosts, dto)
 	}
 
-	// 4. (重要) 重新排序，以符合原始 Feed 的時間順序
+	// 4. 重新排序，以符合原始 Feed 的時間順序
 	postOrder := make(map[string]int)
 	for i, id := range postIDs {
 		postOrder[id] = i
@@ -301,7 +286,6 @@ func (h *PostHandler) GetFeedPosts(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": frontendPosts, "next_key": nextKey})
-
 }
 
 func (h *PostHandler) LikePost(c *gin.Context) {

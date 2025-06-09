@@ -88,7 +88,7 @@ func (r *dynamoDBFeedRepository) GetUserFeed(ctx context.Context, userID string,
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: pkValue},
 		},
-		ScanIndexForward: aws.Bool(false),
+		ScanIndexForward: aws.Bool(true),
 		Limit:            aws.Int32(limit),
 		ExclusiveStartKey: lastEvaluatedKey,
 	}

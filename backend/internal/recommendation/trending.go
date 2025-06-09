@@ -12,27 +12,28 @@ import (
 )
 
 const (
-	likeWeight    = 1.0
-	commentWeight = 0
-	lookbackDays  = 7
+	likeWeight           = 1.0
+	commentWeight        = 0
+	lookbackDays         = 7
+	trendingAlgorithmKey = "trending-v1.0" // 定義一個常數作為演算法金鑰
+	maxTrendingPosts     = 100             // 儲存前 100 篇熱門貼文
 )
 
 // TrendingRecommender 包含演算法所需的依賴
 type TrendingRecommender struct {
-	postRepo         repository.PostRepository
-	userRepo         repository.UserRepository
-	recommendationRepo repository.RecommendationRepository // <-- 新增依賴
+	postRepo           repository.PostRepository
+	userRepo           repository.UserRepository
+	recommendationRepo repository.RecommendationRepository
 }
 
 // NewTrendingRecommender 是 TrendingRecommender 的建構子
 func NewTrendingRecommender(postRepo repository.PostRepository, userRepo repository.UserRepository, recoRepo repository.RecommendationRepository) *TrendingRecommender {
 	return &TrendingRecommender{
-		postRepo:         postRepo,
-		userRepo:         userRepo,
+		postRepo:           postRepo,
+		userRepo:           userRepo,
 		recommendationRepo: recoRepo,
 	}
 }
-
 
 // TrendingPost 是一個臨時結構，用於排序
 type TrendingPost struct {
@@ -67,57 +68,43 @@ func (r *TrendingRecommender) GenerateRecommendations(ctx context.Context) error
 	})
 	log.Printf("Calculation complete. Found %d trending posts.", len(trendingList))
 
-	// --- 3. 為每個使用者產生個人化推薦 (此處仍使用模擬使用者列表) ---
-	// 在實際應用中，應從 userRepo 獲取所有活躍使用者
-	allUsers := []models.User{{ID: 1}, {ID: 10}}
-	
-	var allRecommendations []models.UserRecommendationItem
-	for _, user := range allUsers {
-		userID := fmt.Sprintf("%d", user.ID)
+	// --- 3. 準備全域熱門列表以供儲存 ---
+	// 核心重構：不再遍歷所有使用者。
+	// 我們建立一個單一的全域推薦列表。
 
-		// 模擬獲取該使用者的觀看紀錄
-		seenPosts := make(map[string]bool)
-		if userID == "10" {
-			seenPosts["postABC"] = true
-			seenPosts["postGHI"] = true
-		}
-
-		// 過濾已看過或自己發的貼文
-		var userRecs []models.UserRecommendationItem
-		for _, trendingPost := range trendingList {
-			if len(userRecs) >= 20 { // 每位使用者最多推薦 20 篇
-				break
-			}
-			if _, found := seenPosts[trendingPost.PostID]; found {
-				continue // 過濾看過的
-			}
-
-			// 這裡應檢查是否為使用者自己的貼文 (需要 Post 的 AuthorID)
-			// ...
-
-			recItem := models.UserRecommendationItem{
-				PK:               fmt.Sprintf("USER#%s", userID),
-				SK:               trendingPost.Score, // SK 為分數，用於排序
-				GSI1PK:           "trending-v1.0",
-				GSI1SK:           fmt.Sprintf("USER#%s", userID),
-				PostID:           trendingPost.PostID,
-				AlgorithmVersion: "trending-v1.0",
-				GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
-			}
-			userRecs = append(userRecs, recItem)
-		}
-		allRecommendations = append(allRecommendations, userRecs...)
-		log.Printf("Generated %d recommendations for USER#%s.", len(userRecs), userID)
+	var globalTrendingItems []models.UserRecommendationItem
+	// 限制儲存的貼文數量為 maxTrendingPosts
+	numToSave := len(trendingList)
+	if numToSave > maxTrendingPosts {
+		numToSave = maxTrendingPosts
 	}
 
-	// --- 4. 將所有推薦結果批量寫入 DynamoDB ---
-	if len(allRecommendations) > 0 {
-		log.Printf("Saving %d recommendations to DynamoDB...", len(allRecommendations))
-		err = r.recommendationRepo.SaveRecommendations(ctx, allRecommendations)
+	for i := 0; i < numToSave; i++ {
+		trendingPost := trendingList[i]
+
+		// 排序鍵基於分數，確保順序，並包含 PostID 以保證唯一性。
+		uniqueSortKey := fmt.Sprintf("%010.2f#%s", trendingPost.Score, trendingPost.PostID)
+
+		recItem := models.UserRecommendationItem{
+			PK:               fmt.Sprintf("TRENDING#%s", trendingAlgorithmKey), // 使用一個常數 PK 代表全域列表
+			SK:               uniqueSortKey,                                   // SK 用於按分數排序
+			PostID:           trendingPost.PostID,
+			AlgorithmVersion: trendingAlgorithmKey,
+			GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+			// GSI 相關鍵在此查詢模式下不再需要。
+		}
+		globalTrendingItems = append(globalTrendingItems, recItem)
+	}
+
+	// --- 4. 將單一的全域列表批量寫入 DynamoDB ---
+	if len(globalTrendingItems) > 0 {
+		log.Printf("Saving %d global trending posts to DynamoDB...", len(globalTrendingItems))
+		err = r.recommendationRepo.SaveRecommendations(ctx, globalTrendingItems)
 		if err != nil {
 			return fmt.Errorf("failed to save recommendations: %w", err)
 		}
 	}
 
+	log.Println("Successfully generated and saved global trending recommendations.")
 	return nil
 }

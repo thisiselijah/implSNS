@@ -615,7 +615,7 @@ func (r *DynamoDBPostRepository) GetPostsByIDs(ctx context.Context, postIDs []st
 			// 這裡模擬 GetPostByID 內部查詢 GSI1 的邏輯
 			post, err := r.GetPostByID(ctx, postID)
 			if err != nil {
-				log.Printf("Error getting post by ID %s in GetPostsByIDs: %v", postID, err)
+				log.Printf("Warning: Could not fetch post by ID %s (it may have been deleted): %v", postID, err)
 				return
 			}
 			mu.Lock()

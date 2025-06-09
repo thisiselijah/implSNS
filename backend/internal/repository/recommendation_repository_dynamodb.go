@@ -13,12 +13,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-const UserRecommendationsTableName = "UserRecommendations"
+const RecommendationsTableName = "UserRecommendations" // 表名可以保持不變
 
 // RecommendationRepository 定義了推薦項目的操作
 type RecommendationRepository interface {
 	SaveRecommendations(ctx context.Context, recommendations []models.UserRecommendationItem) error
-	GetRecommendations(ctx context.Context, userID string, limit int32) ([]models.UserRecommendationItem, error)
+	// GetUserRecommendations 保留此方法以備將來可能恢復個人化推薦
+	GetUserRecommendations(ctx context.Context, userID string, limit int32) ([]models.UserRecommendationItem, error)
+	// GetGlobalTrending 獲取全域熱門貼文列表
+	GetGlobalTrending(ctx context.Context, algorithmVersion string, limit int32) ([]models.UserRecommendationItem, error)
 }
 
 type dynamoDBRecommendationRepository struct {
@@ -30,11 +33,11 @@ type dynamoDBRecommendationRepository struct {
 func NewDynamoDBRecommendationRepository(client *dynamodb.Client) RecommendationRepository {
 	return &dynamoDBRecommendationRepository{
 		client:    client,
-		tableName: UserRecommendationsTableName,
+		tableName: RecommendationsTableName,
 	}
 }
 
-// SaveRecommendations 使用 BatchWriteItem 批量儲存推薦項目
+// SaveRecommendations 使用 BatchWriteItem 批量儲存推薦項目 (此方法保持不變，因為它足夠通用)
 func (r *dynamoDBRecommendationRepository) SaveRecommendations(ctx context.Context, recommendations []models.UserRecommendationItem) error {
 	if len(recommendations) == 0 {
 		return nil
@@ -44,7 +47,7 @@ func (r *dynamoDBRecommendationRepository) SaveRecommendations(ctx context.Conte
 	for i, item := range recommendations {
 		av, err := attributevalue.MarshalMap(item)
 		if err != nil {
-			log.Printf("failed to marshal recommendation item for user %s: %v", item.PK, err)
+			log.Printf("failed to marshal recommendation item %v: %v", item, err)
 			return fmt.Errorf("failed to marshal recommendation item: %w", err)
 		}
 		writeRequests[i] = types.WriteRequest{
@@ -54,7 +57,6 @@ func (r *dynamoDBRecommendationRepository) SaveRecommendations(ctx context.Conte
 		}
 	}
 
-	// DynamoDB BatchWriteItem 每次最多處理 25 個項目
 	chunkSize := 25
 	for i := 0; i < len(writeRequests); i += chunkSize {
 		end := i + chunkSize
@@ -80,8 +82,38 @@ func (r *dynamoDBRecommendationRepository) SaveRecommendations(ctx context.Conte
 	return nil
 }
 
-// GetRecommendations 獲取指定使用者的推薦列表，按分數（SK）降序排列
-func (r *dynamoDBRecommendationRepository) GetRecommendations(ctx context.Context, userID string, limit int32) ([]models.UserRecommendationItem, error) {
+// GetGlobalTrending 從推薦表中獲取全域熱門列表。
+func (r *dynamoDBRecommendationRepository) GetGlobalTrending(ctx context.Context, algorithmVersion string, limit int32) ([]models.UserRecommendationItem, error) {
+	pkValue := "TRENDING#" + algorithmVersion
+
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		KeyConditionExpression: aws.String("PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: pkValue},
+		},
+		ScanIndexForward: aws.Bool(false), // 按 SK (分數) 降序排序，以獲得最高分
+		Limit:            aws.Int32(limit),
+	}
+
+	result, err := r.client.Query(ctx, queryInput)
+	if err != nil {
+		log.Printf("DynamoDB Query failed for global trending recommendations %s: %v", algorithmVersion, err)
+		return nil, fmt.Errorf("failed to query global trending recommendations: %w", err)
+	}
+
+	var recommendations []models.UserRecommendationItem
+	if err := attributevalue.UnmarshalListOfMaps(result.Items, &recommendations); err != nil {
+		log.Printf("Failed to unmarshal global trending recommendations: %v", err)
+		return nil, err
+	}
+
+	return recommendations, nil
+}
+
+// GetUserRecommendations 獲取指定使用者的推薦列表。
+// 這是原始的 GetRecommendations 方法，重新命名以提高清晰度。
+func (r *dynamoDBRecommendationRepository) GetUserRecommendations(ctx context.Context, userID string, limit int32) ([]models.UserRecommendationItem, error) {
 	pkValue := "USER#" + userID
 
 	queryInput := &dynamodb.QueryInput{

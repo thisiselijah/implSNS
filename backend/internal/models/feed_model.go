@@ -46,12 +46,11 @@ type PaginatedFeed struct {
 }
 
 type UserRecommendationItem struct {
-	PK               string  `dynamodbav:"PK"`               // e.g., USER#10
-	SK               float64 `dynamodbav:"SK"`               // e.g., 推薦分數，用於排序 (!!!類型已修改為 float64!!!)
-	GSI1PK           string  `dynamodbav:"GSI1PK"`           // e.g., "trending-v1.0"
-	GSI1SK           string  `dynamodbav:"GSI1SK"`           // e.g., USER#10
-	PostID           string  `dynamodbav:"PostID"`           // 推薦的貼文 ID
-	AlgorithmVersion string  `dynamodbav:"AlgorithmVersion"` // 演算法版本
-	GeneratedAt      string  `dynamodbav:"GeneratedAt"`      // 推薦產生的時間
+	PK               string `dynamodbav:"PK"`
+	SK               string `dynamodbav:"SK"`
+	GSI1PK           string `dynamodbav:"GSI1PK,omitempty"` // *** FIX: 如果為空，則在寫入時忽略此欄位 ***
+	GSI1SK           string `dynamodbav:"GSI1SK,omitempty"` // *** FIX: 如果為空，則在寫入時忽略此欄位 ***
+	PostID           string `dynamodbav:"PostID"`           // 推薦的貼文 ID
+	AlgorithmVersion string `dynamodbav:"AlgorithmVersion"` // 演算法版本
+	GeneratedAt      string `dynamodbav:"GeneratedAt"`      // 推薦產生的時間
 }
-
