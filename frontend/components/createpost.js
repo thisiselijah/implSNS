@@ -7,6 +7,7 @@ export default function CreatePost({ onClose, avatar_url }) {
   // const [MarkdownOnClick, setMarkdownOnClick] = useState(false);
   const [imagePreviews, setImagePreviews] = useState([]); // Array of {id: string, file: File, url: string}
   const [postText, setPostText] = useState(""); // State for textarea
+  const [isLoading, setIsLoading] = useState(false); // Loading state for post submission
 
   // Ref to hold current previews for unmount cleanup
   const previewsRef = useRef(imagePreviews);
@@ -36,10 +37,15 @@ export default function CreatePost({ onClose, avatar_url }) {
       const files = event.target.files;
       if (files && files.length > 0) {
         const newImageObjects = Array.from(files).map((file) => {
-          const id = `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+          const id = `${file.name}-${Date.now()}-${Math.random()
+            .toString(36)
+            .substring(2, 9)}`;
           return { id, file, url: URL.createObjectURL(file) };
         });
-        setImagePreviews((prevPreviews) => [...prevPreviews, ...newImageObjects]);
+        setImagePreviews((prevPreviews) => [
+          ...prevPreviews,
+          ...newImageObjects,
+        ]);
       }
     };
     input.click();
@@ -50,7 +56,9 @@ export default function CreatePost({ onClose, avatar_url }) {
     if (imageToRemove) {
       URL.revokeObjectURL(imageToRemove.url);
     }
-    setImagePreviews((prevPreviews) => prevPreviews.filter((img) => img.id !== idToRemove));
+    setImagePreviews((prevPreviews) =>
+      prevPreviews.filter((img) => img.id !== idToRemove)
+    );
   };
 
   // NEW: Refactored handlePost function to implement the full upload flow
@@ -61,28 +69,35 @@ export default function CreatePost({ onClose, avatar_url }) {
     }
 
     let uploadedImageKeys = [];
+    setIsLoading(true); // Set loading state to true
 
     try {
       // --- STAGE 1: Get Presigned URLs from your Lambda API ---
       if (imagePreviews.length > 0) {
         console.log("Stage 1: Getting presigned URLs...");
-        const filesToUpload = imagePreviews.map(p => ({
+        const filesToUpload = imagePreviews.map((p) => ({
           fileName: p.file.name,
           fileType: p.file.type,
         }));
 
-        const presignedUrlResponse = await fetch(`${process.env.NEXT_PUBLIC_UPLOAD_IMAGES2S3_URL}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ files: filesToUpload }),
-        });
+        const presignedUrlResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_UPLOAD_IMAGES2S3_URL}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ files: filesToUpload }),
+          }
+        );
 
         if (!presignedUrlResponse.ok) {
-          throw new Error(`Failed to get upload URLs. Status: ${presignedUrlResponse.status}`);
+          setIsLoading(false); // Reset loading state
+          throw new Error(
+            `Failed to get upload URLs. Status: ${presignedUrlResponse.status}`
+          );
         }
-        
+
         const { uploadData } = await presignedUrlResponse.json();
         console.log("Received upload data:", uploadData);
 
@@ -91,22 +106,23 @@ export default function CreatePost({ onClose, avatar_url }) {
         const uploadPromises = imagePreviews.map((preview, index) => {
           const { presignedUrl } = uploadData[index];
           return fetch(presignedUrl, {
-            method: 'PUT',
+            method: "PUT",
             headers: {
-              'Content-Type': preview.file.type,
+              "Content-Type": preview.file.type,
             },
             body: preview.file,
           });
         });
 
         const uploadResults = await Promise.all(uploadPromises);
-        
-        if (uploadResults.some(res => !res.ok)) {
-            throw new Error('One or more files failed to upload to S3.');
+
+        if (uploadResults.some((res) => !res.ok)) {
+          setIsLoading(false); // Reset loading state
+          throw new Error("One or more files failed to upload to S3.");
         }
-        
+
         console.log("All files successfully uploaded to S3.");
-        uploadedImageKeys = uploadData.map(d => d.s3Key);
+        uploadedImageKeys = uploadData.map((d) => d.s3Key);
       }
 
       // --- STAGE 3: Create the post by calling your Go backend ---
@@ -116,11 +132,11 @@ export default function CreatePost({ onClose, avatar_url }) {
       const awsRegion = process.env.NEXT_PUBLIC_AWS_S3_REGION;
 
       // 1. Transform S3 keys into full URLs and place them in the 'media' array.
-      const mediaPayload = uploadedImageKeys.map(key => ({
-        type: 'image',
-        url: `https://${s3BucketName}.s3.${awsRegion}.amazonaws.com/${key}`
+      const mediaPayload = uploadedImageKeys.map((key) => ({
+        type: "image",
+        url: `https://${s3BucketName}.s3.${awsRegion}.amazonaws.com/${key}`,
       }));
-      
+
       // 2. Assemble the final payload with the correct field names: 'content', 'media', 'tags'.
       const postPayload = {
         author_id: "default-author-id", // Replace with actual author ID
@@ -133,27 +149,32 @@ export default function CreatePost({ onClose, avatar_url }) {
       console.log(`Submitting to Go backend`, postPayload);
 
       const createPostResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(postPayload),
-        credentials: 'include', // Ensure cookies are sent
-      });
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_POSTS_API}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(postPayload),
+          credentials: "include", // Ensure cookies are sent
+        }
+      );
 
       if (!createPostResponse.ok) {
-        throw new Error('Failed to create post in the backend.');
+        setIsLoading(false); // Reset loading state
+        throw new Error("Failed to create post in the backend.");
       }
-      
+
       // --- FINAL: Success and cleanup ---
-      alert("Post submitted successfully! (Simulated backend call)");
       setPostText("");
       setImagePreviews([]);
+      setIsLoading(false); // Reset loading state
       if (onClose) onClose();
-
     } catch (error) {
-      console.error("An error occurred during the post creation process:", error);
+      console.error(
+        "An error occurred during the post creation process:",
+        error
+      );
       alert(`Error: ${error.message}`);
     }
   };
@@ -203,7 +224,6 @@ export default function CreatePost({ onClose, avatar_url }) {
             rows={3}
             value={postText}
             onChange={(e) => setPostText(e.target.value)}
-
           />
 
           {/* Multiple Image Previews Section */}
@@ -411,8 +431,15 @@ export default function CreatePost({ onClose, avatar_url }) {
         </div>
       </div>
       <div className="flex flex-row items-center justify-end p-2 px-4">
-        <button onClick={handlePost} className="p-1 px-4 bg-[#000000] hover:bg-gray-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150">
-          Post
+        <button
+          onClick={handlePost}
+          className="p-1 px-4 bg-[#000000] hover:bg-gray-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150"
+        >
+          {isLoading ? (
+            <div className="animate-spin rounded-full h-5 w-5 border-2 border-b-2 border-white border-t-transparent mx-auto"></div>
+          ) : (
+            `Post`
+          )}
         </button>
       </div>
     </div>

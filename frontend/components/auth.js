@@ -25,8 +25,8 @@ export default function Auth({ onClose }) {
     }
 
     // Password 格式驗證（至少 6 碼）
-    if (password.length < 6) {
-      setPasswordError("密碼長度至少需 6 碼");
+    if (password.length < 8) {
+      setPasswordError("密碼長度至少需 8 碼");
       valid = false;
     } else {
       setPasswordError("");
