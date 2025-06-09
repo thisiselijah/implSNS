@@ -24,7 +24,7 @@ export function PostCard({ post, authorProfile }) {
   const {
     post_id = post?.post_id || key,
     author_name = authorProfile?.username || "Default User",
-    avatar_url = authorProfile?.avatar_url || null,
+    avatar_url = authorProfile?.avatar_url || "/user.png",
     content = "這是貼文的主要內容。Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
     like_count = 14,
     comment_count = 0,

@@ -7,7 +7,7 @@ import (
 // --- User Model (假設的資料庫模型) ---
 // 在實際專案中，這個 User 結構體應該在 models 套件中定義
 type User struct {
-	ID           uint      `json:"id"`
+	ID           string    `json:"id"` // <-- 修改為 string
 	Username     string    `json:"username"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"` // 密碼雜湊不應該被序列化到 JSON
@@ -34,7 +34,7 @@ type UserForLogin struct {
 // LoginResponse 代表成功登入後的回應
 type LoginResponse struct {
 	Token        string `json:"token"`
-	UserID       uint   `json:"user_id"` // 假設 UserID 是 uint
+	UserID       string `json:"user_id"` // <-- 修改為 string
 	UserEmail    string `json:"email"`
 	UserUsername string `json:"username"`
 }

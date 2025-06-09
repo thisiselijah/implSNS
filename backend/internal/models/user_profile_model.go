@@ -8,7 +8,7 @@ import (
 // UserProfile 對應資料庫中的 user_profiles 表
 type UserProfile struct {
 	ID        uint         `json:"id"`
-	UserID    uint         `json:"user_id"`
+	UserID    string       `json:"user_id"` // <-- 修改為 string
 	Username  string       `json:"username" binding:"required,max=255"` // 限制最大長度為 50 字元
 	AvatarURL string       `json:"avatar_url"`
 	BirthDate sql.NullTime `json:"birth_date"` // 使用 sql.NullTime 來處理可能的 NULL 值

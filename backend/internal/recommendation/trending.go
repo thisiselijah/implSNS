@@ -2,25 +2,37 @@
 package recommendation
 
 import (
+	"backend/internal/models"
+	"backend/internal/repository"
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"time"
-	"fmt"
-	"backend/internal/models"
-	"backend/internal/repository" 
 )
 
 const (
-	likeWeight    = 1.0
-	commentWeight = 1.5
-	lookbackDays  = 7
+	likeWeight           = 1.0
+	commentWeight        = 0
+	lookbackDays         = 7
+	trendingAlgorithmKey = "trending-v1.0" // 定義一個常數作為演算法金鑰
+	maxTrendingPosts     = 100             // 儲存前 100 篇熱門貼文
 )
 
 // TrendingRecommender 包含演算法所需的依賴
 type TrendingRecommender struct {
-	postRepo repository.PostRepository
-	userRepo repository.UserRepository
+	postRepo           repository.PostRepository
+	userRepo           repository.UserRepository
+	recommendationRepo repository.RecommendationRepository
+}
+
+// NewTrendingRecommender 是 TrendingRecommender 的建構子
+func NewTrendingRecommender(postRepo repository.PostRepository, userRepo repository.UserRepository, recoRepo repository.RecommendationRepository) *TrendingRecommender {
+	return &TrendingRecommender{
+		postRepo:           postRepo,
+		userRepo:           userRepo,
+		recommendationRepo: recoRepo,
+	}
 }
 
 // TrendingPost 是一個臨時結構，用於排序
@@ -32,18 +44,20 @@ type TrendingPost struct {
 // GenerateRecommendations 執行主要的推薦邏輯
 func (r *TrendingRecommender) GenerateRecommendations(ctx context.Context) error {
 	// --- 1. 獲取近期貼文並計算分數 ---
-	// 實際應用中，postRepo 應有一個方法來獲取近期貼文
-	// allRecentPosts, err := r.postRepo.GetRecentPosts(ctx, lookbackDays)
-	// 此處為模擬：
-	log.Println("模擬：獲取所有近期貼文...")
-	allRecentPosts, _ := r.postRepo.GetPostsByUserID(ctx, "1") // 模擬從某使用者獲取
-	anotherUserPosts, _ := r.postRepo.GetPostsByUserID(ctx, "2")
-	allRecentPosts = append(allRecentPosts, anotherUserPosts...)
+	log.Println("Fetching recent posts for trending calculation...")
+	allRecentPosts, err := r.postRepo.GetRecentPosts(ctx, lookbackDays)
+	if err != nil {
+		log.Printf("Error getting recent posts for trending recommendations: %v", err)
+		return fmt.Errorf("could not get recent posts: %w", err)
+	}
 
+	if len(allRecentPosts) == 0 {
+		log.Println("No recent posts found to generate recommendations.")
+		return nil
+	}
 
 	var trendingList []TrendingPost
 	for _, post := range allRecentPosts {
-		// post.LikeCount 和 post.CommentCount 已被反正規化，可直接使用
 		score := float64(post.LikeCount)*likeWeight + float64(post.CommentCount)*commentWeight
 		trendingList = append(trendingList, TrendingPost{PostID: post.PostID, Score: score})
 	}
@@ -52,61 +66,45 @@ func (r *TrendingRecommender) GenerateRecommendations(ctx context.Context) error
 	sort.Slice(trendingList, func(i, j int) bool {
 		return trendingList[i].Score > trendingList[j].Score
 	})
-	log.Printf("計算完成，總共有 %d 篇熱門貼文。", len(trendingList))
+	log.Printf("Calculation complete. Found %d trending posts.", len(trendingList))
 
+	// --- 3. 準備全域熱門列表以供儲存 ---
+	// 核心重構：不再遍歷所有使用者。
+	// 我們建立一個單一的全域推薦列表。
 
-	// --- 3. 為每個使用者產生個人化推薦 ---
-	// allUsers, err := r.userRepo.GetAllUsers(ctx) // 應有此方法
-	// 模擬使用者列表：
-	allUsers := []models.User{{ID: 1}, {ID: 10}} 
-	
-	for _, user := range allUsers {
-		userID := fmt.Sprintf("%d", user.ID)
-
-		// 獲取該使用者的觀看紀錄 (模擬)
-		// seenPosts, _ := r.seenHistoryRepo.GetSeenPosts(ctx, userID)
-		// 根據 SeenHistory.json 的範例，USER#10 看過 postABC 和 postGHI
-		seenPosts := make(map[string]bool)
-		if userID == "10" {
-			seenPosts["postABC"] = true
-			seenPosts["postGHI"] = true
-		}
-
-
-		// 過濾已看過或自己發的貼文
-		var recommendations []models.UserRecommendationItem
-		for _, trendingPost := range trendingList {
-			// 如果已經推薦滿了，就跳出
-			if len(recommendations) >= 20 {
-				break
-			}
-			
-			// 檢查是否看過
-			if _, found := seenPosts[trendingPost.PostID]; found {
-				continue // 已看過，跳過
-			}
-
-			// 這裡應檢查是否為使用者自己的貼文 (需要 Post 的 AuthorID)
-			// ...
-
-			// 加入推薦列表
-			recItem := models.UserRecommendationItem{
-				PK:               fmt.Sprintf("USER#%s", userID),
-				SK:               fmt.Sprintf("%f", trendingPost.Score), // 使用分數作為 SK，方便排序
-				GSI1PK:           "trending-v1.0", // 演算法版本
-				GSI1SK:           fmt.Sprintf("USER#%s", userID),
-				PostID:           trendingPost.PostID,
-				AlgorithmVersion: "trending-v1.0",
-				GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
-			}
-			recommendations = append(recommendations, recItem)
-		}
-
-		// --- 4. 將結果寫入 DynamoDB ---
-		// err := r.recommendationRepo.SaveRecommendations(ctx, recommendations)
-		log.Printf("為 USER#%s 產生了 %d 條推薦。", userID, len(recommendations))
-		// (模擬寫入)
+	var globalTrendingItems []models.UserRecommendationItem
+	// 限制儲存的貼文數量為 maxTrendingPosts
+	numToSave := len(trendingList)
+	if numToSave > maxTrendingPosts {
+		numToSave = maxTrendingPosts
 	}
 
+	for i := 0; i < numToSave; i++ {
+		trendingPost := trendingList[i]
+
+		// 排序鍵基於分數，確保順序，並包含 PostID 以保證唯一性。
+		uniqueSortKey := fmt.Sprintf("%010.2f#%s", trendingPost.Score, trendingPost.PostID)
+
+		recItem := models.UserRecommendationItem{
+			PK:               fmt.Sprintf("TRENDING#%s", trendingAlgorithmKey), // 使用一個常數 PK 代表全域列表
+			SK:               uniqueSortKey,                                   // SK 用於按分數排序
+			PostID:           trendingPost.PostID,
+			AlgorithmVersion: trendingAlgorithmKey,
+			GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+			// GSI 相關鍵在此查詢模式下不再需要。
+		}
+		globalTrendingItems = append(globalTrendingItems, recItem)
+	}
+
+	// --- 4. 將單一的全域列表批量寫入 DynamoDB ---
+	if len(globalTrendingItems) > 0 {
+		log.Printf("Saving %d global trending posts to DynamoDB...", len(globalTrendingItems))
+		err = r.recommendationRepo.SaveRecommendations(ctx, globalTrendingItems)
+		if err != nil {
+			return fmt.Errorf("failed to save recommendations: %w", err)
+		}
+	}
+
+	log.Println("Successfully generated and saved global trending recommendations.")
 	return nil
 }

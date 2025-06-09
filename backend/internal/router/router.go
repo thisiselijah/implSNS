@@ -73,7 +73,7 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 			}
 
 			// --- 動態消息 (Feed) ---
-			pagesRoutes.GET("/posts/feed/:userID", handler.GetFeedPosts(dynamoDBClient, userRepo))
+			pagesRoutes.GET("/posts/feed/:userID", postHandler.GetFeedPosts)
 
 			// --- 個人資料 ---
 			profileRoutes := pagesRoutes.Group("/profile/:userID")
@@ -83,6 +83,7 @@ func NewRouter(mysqlDB *sql.DB, dynamoDBClient *dynamodb.Client, authHandler *ha
 				profileRoutes.PUT("/bio", profileHandler.UpdateBio)
 			}
 		}
+
 	}
 
 	return r
