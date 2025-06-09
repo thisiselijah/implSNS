@@ -192,7 +192,7 @@ export default function Profile({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
-  const [displayUrl, setDisplayUrl] = useState(profileData.avatar_url);
+  const [displayUrl, setDisplayUrl] = useState(profileData.avatar_url || '/user.png');
   const [uploadingDots, setUploadingDots] = useState(0);
   const [isFollowed, setIsFollowed] = useState(isFollowing);
   const currentfollowingCount = profileData.followingCount || 0;

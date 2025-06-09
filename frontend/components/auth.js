@@ -1,7 +1,8 @@
 // auth.js
-import { useAuth } from '@/contexts/AuthContext'; // 引入 useAuth hook
+import { useAuth } from "@/contexts/AuthContext"; // 引入 useAuth hook
 
-export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
+export default function Auth({ onClose }) {
+  // 不再需要 onLoginSuccess
   const { login } = useAuth(); // 從 context 取得 login 方法
 
   const handleFormSubmit = async (event) => {
@@ -10,24 +11,26 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
     console.log("Form submitted in Auth component");
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_LOGIN_API}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: event.target.email.value,
-          password: event.target.password.value,
-        }),
-        credentials: 'include', // 重要！確保瀏覽器接收 Set-Cookie header
-      });
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}${process.env.NEXT_PUBLIC_LOGIN_API}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: event.target.email.value,
+            password: event.target.password.value,
+          }),
+          credentials: "include", // 重要！確保瀏覽器接收 Set-Cookie header
+        }
+      );
 
       if (!response.ok) {
         // 錯誤處理邏輯保持不變
         const errData = await response.json();
         throw new Error(errData.error || "Login failed.");
       }
-      
+
       // 登入成功，後端已設置 cookie
       const userData = await response.json();
       console.log("Login successful, user data:", userData);
@@ -37,16 +40,16 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
       if (onClose) {
         onClose();
       }
-
     } catch (error) {
       console.error("There was a problem with the login request:", error);
-      alert(error.message || "Login failed. Please check your credentials and try again.");
+      alert(
+        error.message ||
+          "Login failed. Please check your credentials and try again."
+      );
     }
   };
 
   return (
-    // ... JSX 保持不變 ...
-    // [JSX from file 1]
     <div className="bg-white p-6 sm:p-8 rounded-lg shadow-xl w-full max-w-md transform transition-all">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">
@@ -76,11 +79,7 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
         )}
       </div>
       <div className="sm:mx-auto sm:w-full sm:max-w-sm mb-6">
-        <img
-          alt="Your Company"
-          src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=600"
-          className="mx-auto h-10 w-auto"
-        />
+        <></>
       </div>
       <form onSubmit={handleFormSubmit} className="space-y-6">
         <div>
@@ -112,7 +111,7 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
             <div className="text-sm">
               <a
                 href="#"
-                className="font-semibold text-indigo-600 hover:text-indigo-500"
+                className="font-semibold text-balck hover:text-[#B6B09F]"
               >
                 Forgot password?
               </a>
@@ -132,7 +131,7 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
         <div>
           <button
             type="submit"
-            className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
             Sign in
           </button>
@@ -142,7 +141,7 @@ export default function Auth({ onClose }) { // 不再需要 onLoginSuccess
         Not a member?
         <a
           href="/register"
-          className="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
+          className="font-semibold leading-6 text-black hover:text-indigo-500"
         >
           <span aria-hidden="true"> </span>
           Create a new account

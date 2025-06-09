@@ -38,46 +38,46 @@ export default function Register() {
     };
 
     return (
-        <Layout>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-4 min-h-screen">
-                <main className="flex flex-col col-start-4 col-end-10 ">
-                    <div className="bg-white p-0.5 rounded-lg shadow">
-                        <div className="flex flex-col p-4 border-b border-gray-200">
-                            <h1 className="text-2xl font-bold text-center">註冊</h1>
-                        </div>
-                        <form className="flex flex-col gap-4 p-6" onSubmit={handleFormSubmit}>
-                            <input
-                                name="username"
-                                type="text"
-                                placeholder="使用者名稱"
-                                required
-                                className="p-2 border rounded"
-                            />
-                            <input
-                                name="email"
-                                type="email"
-                                placeholder="電子郵件"
-                                required
-                                className="p-2 border rounded"
-                            />
-                            <input
-                                name="password"
-                                type="password"
-                                placeholder="密碼"
-                                required
-                                className="p-2 border rounded"
-                            />
-                            <button
-                                type="submit"
-                                className="bg-black text-white py-2 rounded hover:bg-gray-700"
-                                disabled={loading}
-                            >
-                                {loading ? "註冊中..." : "註冊"}
-                            </button>
-                        </form>
-                    </div>
-                </main>
-            </div>
+                <Layout>
+          <div className="flex items-center justify-center min-h-screen">
+            <main className="flex flex-col w-full max-w-md">
+              <div className="bg-white p-0.5 rounded-lg shadow">
+                <div className="flex flex-col p-4 border-b border-gray-200">
+                  <h1 className="text-2xl font-bold text-center">註冊</h1>
+                </div>
+                <form className="flex flex-col gap-4 p-6" onSubmit={handleFormSubmit}>
+                  <input
+                    name="username"
+                    type="text"
+                    placeholder="使用者名稱"
+                    required
+                    className="p-2 border rounded"
+                  />
+                  <input
+                    name="email"
+                    type="email"
+                    placeholder="電子郵件"
+                    required
+                    className="p-2 border rounded"
+                  />
+                  <input
+                    name="password"
+                    type="password"
+                    placeholder="密碼"
+                    required
+                    className="p-2 border rounded"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-black text-white py-2 rounded hover:bg-gray-700"
+                    disabled={loading}
+                  >
+                    {loading ? "註冊中..." : "註冊"}
+                  </button>
+                </form>
+              </div>
+            </main>
+          </div>
         </Layout>
     );
 }
