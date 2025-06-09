@@ -1,4 +1,7 @@
 // backend/cmd/backend/main.go
+// GO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./cmd/backend/main ./cmd/backend/
+// CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main ./cmd/backend/
+
 package main
 
 import (
