@@ -140,15 +140,11 @@ export async function getServerSideProps(context) {
       );
       if (followingRes.ok) {
         const followingData = await followingRes.json();
-        console.log("Following data:", followingData);
-
-        console.log("Profile ID from URL:", profileIdFromUrl);
-        console.log("Logged in user ID:", loggedInUserId);
 
         isFollowing = followingData.some(
           (user) => user.id === Number(profileIdFromUrl)
         );
-        console.log("Is following:", isFollowing);
+
       }
     } catch (error) {
       console.error("Error checking following status:", error);

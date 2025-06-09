@@ -74,12 +74,6 @@ export async function getServerSideProps(context) {
     let feedData = await feedResponse.json();
     feedData = feedData.data || [];
 
-    console.log("SSR: Initial feed data:", feedData);
-
-    // parse feedData
-    
-
-
     const profileResponse = await fetch(
       `${process.env.NEXT_PUBLIC_SSR_ASK_BASE_URL}${process.env.NEXT_PUBLIC_PROFILE_API}${userId}`,
       {
