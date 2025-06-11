@@ -142,7 +142,7 @@ export async function getServerSideProps(context) {
         const followingData = await followingRes.json();
 
         isFollowing = followingData.some(
-          (user) => user.id === Number(profileIdFromUrl)
+          (user) => user.id === profileIdFromUrl
         );
 
       }
